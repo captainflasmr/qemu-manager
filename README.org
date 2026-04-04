@@ -1,6 +1,6 @@
 #+title: qvm.el --- Emacs interface to the qvm QEMU VM manager
 #+author: James Dyer
-#+version: 0.2.0
+#+version: 0.4.0
 
 *qvm* is an Emacs interface to the ~qvm~ QEMU VM manager shell script. It provides a convenient way to manage, start, and interact with QEMU virtual machines directly from Emacs.
 
@@ -11,7 +11,11 @@
 - *TRAMP Integration*: Quickly open /dired/ or an /eshell/ on a running VM via SSH (localhost tunneling).
 - *Display Support*: Launch VNC or SPICE viewers for any running VM. SPICE provides clipboard sharing, dynamic resolution, and better keyboard input handling.
 - *File Transfer*: Easily ~scp~ files (or dired marked files) to a VM.
+- *Clipboard Sharing*: Copy/paste between host and VM over SSH (~w~ / ~y~), with auto-detection of guest clipboard tools (wl-clipboard, xclip, xsel). Works with both VNC and SPICE.
 - *Keyboard Setup*: Configure keyboard remaps (CapsLock/Right Alt → Ctrl) and sticky keys on GNOME VM guests via SSH.
+- *Display Switching*: Toggle between VNC and SPICE display types without recreating the VM.
+- *Snapshots*: Create, list, restore, and delete qcow2 internal snapshots on stopped VMs, with completing-read for snapshot selection.
+- *Cloning*: Clone VMs as a full independent copy or a linked (COW) clone that shares the source disk for speed and space efficiency.
 - *Creation*: Create new VMs from ISO images directly from Emacs, prompting for disk size, memory, CPU count, and display type.
 
 * Requirements
@@ -21,6 +25,7 @@
 - Built-in Emacs libraries: ~tabulated-list~, ~tramp~.
 - For VNC: ~vncviewer~
 - For SPICE: ~spicy~ (from ~spice-gtk~), and ~spice-vdagent~ inside the guest for clipboard sharing.
+- For clipboard over SSH: ~wl-clipboard~ on the host, and ~wl-clipboard~ or ~xclip~ inside the guest.
 
 * Installation
 
@@ -55,15 +60,52 @@ Run ~M-x qvm-list~ to open the VM manager buffer.
 | ~s~         | Start VM                                     |
 | ~x~         | Stop VM (with confirmation)                  |
 | ~c~         | Create new VM (prompts for ISO, name, etc.)  |
+| ~C~         | Clone VM (full or linked/COW)                |
+| ~n~         | Create snapshot                              |
+| ~N~         | List snapshots                               |
+| ~R~         | Restore snapshot                             |
+| ~X~         | Delete snapshot                              |
 | ~v~         | Open VNC viewer                              |
 | ~V~         | Open SPICE viewer                            |
+| ~D~         | Toggle display type (vnc/spice)              |
 | ~k~         | Setup keyboard remaps + sticky keys          |
+| ~w~         | Copy VM clipboard → host (kill/copy)         |
+| ~y~         | Paste host clipboard → VM (yank)             |
+| ~I~         | Install clipboard tools on VM                |
 | ~d~         | Open dired on VM via TRAMP                   |
 | ~e~         | Open eshell on VM via TRAMP                  |
 | ~S~         | SCP marked files to VM                       |
 | ~i~         | Show VM info                                 |
 | ~g~         | Refresh VM list                              |
 | ~q~         | Quit window                                  |
+
+** Snapshots
+
+Create, list, restore, and delete internal qcow2 snapshots on stopped VMs:
+
+#+begin_src bash :tangle no
+qvm snapshot myvm create base-install   # create a snapshot
+qvm snapshot myvm list                  # list all snapshots
+qvm snapshot myvm restore base-install  # restore to a snapshot
+qvm snapshot myvm delete base-install   # delete a snapshot
+#+end_src
+
+In the Emacs list buffer, ~n~ creates a snapshot and ~R~ / ~X~ restore / delete with completing-read over existing tags. ~N~ lists all snapshots for the VM at point.
+
+** Cloning
+
+Clone a stopped VM as either a full independent copy or a linked (copy-on-write) clone:
+
+#+begin_src bash :tangle no
+qvm clone myvm myvm-copy              # full clone (copies entire disk)
+qvm clone myvm myvm-dev --linked      # linked clone (fast, shares source disk)
+#+end_src
+
+Full clones are independent but take time and disk space proportional to the source disk. Linked clones are instant and space-efficient, but depend on the source disk — if the source is deleted or corrupted, the linked clone breaks.
+
+New ports (SSH, VNC, SPICE) are auto-assigned to avoid collisions.
+
+In the Emacs list buffer, press ~C~ to clone the VM at point.
 
 ** SPICE Display
 
@@ -81,6 +123,24 @@ qvm create myvm --disk 40G -m 4G --display spice
 
 Existing VMs default to VNC for backward compatibility.
 
+Switch an existing VM between display types:
+
+#+begin_src bash :tangle no
+qvm display myvm spice    # switch to spice
+qvm display myvm vnc      # switch to vnc
+qvm display myvm           # show current type
+#+end_src
+
+*** SwayWM: Keyboard Shortcut Passthrough
+
+By default, the ~spicy~ SPICE client requests keyboard shortcut inhibition from the Wayland compositor, causing host keybindings (e.g. ~Super+u~ to switch desktops) to be sent to the guest instead of being handled by sway. To prevent this, add the following to your sway config:
+
+#+begin_src conf :tangle no
+for_window [app_id="spicy"] shortcuts_inhibitor disable
+#+end_src
+
+Reload sway (~swaymsg reload~) and restart the SPICE viewer for the change to take effect.
+
 ** Keyboard Setup for VM Guests
 
 Host XKB settings (sticky keys, key remaps) do not pass through SPICE or VNC to the guest since keyboard input is sent as raw scancodes. The ~keyboard~ command configures these inside the guest via SSH:
@@ -97,6 +157,20 @@ This applies to GNOME Wayland guests:
 - Sticky keys enabled
 
 Log out and back in to the guest for changes to take effect.
+
+** Clipboard Sharing (VNC)
+
+SPICE provides native clipboard sharing via ~spice-vdagent~. For VNC mode (or as a fallback), clipboard can be shared over SSH:
+
+#+begin_src bash :tangle no
+qvm clip myvm copy      # VM clipboard → host
+qvm clip myvm paste     # host clipboard → VM
+qvm clip myvm install   # install clipboard tools on the guest
+#+end_src
+
+The ~install~ subcommand auto-detects the guest package manager (zypper, apt, dnf, pacman, apk) and installs both ~wl-clipboard~ and ~xclip~. The ~copy~ and ~paste~ subcommands auto-detect which clipboard tool is available on the guest (~wl-paste~ / ~wl-copy~ for Wayland, ~xclip~ or ~xsel~ for X11).
+
+Requires ~wl-copy~ / ~wl-paste~ on the host (included with sway).
 
 * Customization
 

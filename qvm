@@ -13,6 +13,15 @@
 #   qvm vnc <name>                     Open VNC viewer to a VM
 #   qvm spice <name>                   Open SPICE viewer to a VM
 #   qvm keyboard <name>                Setup keyboard remaps + sticky keys
+#   qvm display <name> [vnc|spice]     Show or switch display type
+#   qvm clip <name> copy               Copy VM clipboard → host
+#   qvm clip <name> paste              Paste host clipboard → VM
+#   qvm clip <name> install            Install xclip on the VM
+#   qvm snapshot <name> create <tag>   Create a snapshot
+#   qvm snapshot <name> list           List snapshots
+#   qvm snapshot <name> restore <tag>  Restore a snapshot
+#   qvm snapshot <name> delete <tag>   Delete a snapshot
+#   qvm clone <source> <new> [--linked] Clone a VM
 #   qvm list                           List all VMs
 #   qvm info <name>                    Show VM configuration
 #   qvm rename <old> <new>              Rename a VM
@@ -524,6 +533,94 @@ cmd_keyboard() {
     info "Done. Log out and back in to the VM for changes to take effect."
 }
 
+cmd_display() {
+    local name="${1:-}" new_display="${2:-}"
+    [[ -n "$name" ]] || die "Usage: qvm display <name> [vnc|spice]"
+    vm_exists "$name" || die "VM '$name' not found"
+
+    load_conf "$name"
+
+    if [[ -z "$new_display" ]]; then
+        echo "$VM_DISPLAY"
+        return 0
+    fi
+
+    [[ "$new_display" == "vnc" || "$new_display" == "spice" ]] \
+        || die "Display type must be 'vnc' or 'spice'"
+
+    if [[ "$new_display" == "$VM_DISPLAY" ]]; then
+        info "Already set to '$new_display'"
+        return 0
+    fi
+
+    vm_running "$name" && die "VM '$name' is running. Stop it first to switch display."
+
+    VM_DISPLAY="$new_display"
+    save_conf "$name"
+    info "Switched '${BOLD}$name${RESET}' to ${BOLD}$new_display${RESET} (takes effect on next start)"
+}
+
+cmd_clip() {
+    local name="" action=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            copy|paste|install) action="$1"; shift ;;
+            -*)         die "Unknown option: $1" ;;
+            *)
+                [[ -z "$name" ]] || die "Unexpected argument: $1"
+                name="$1"; shift
+                ;;
+        esac
+    done
+
+    [[ -n "$name" ]] || die "Usage: qvm clip <name> copy|paste|install"
+    [[ -n "$action" ]] || die "Usage: qvm clip <name> copy|paste|install"
+    vm_exists "$name" || die "VM '$name' not found"
+    vm_running "$name" || die "VM '$name' is not running"
+
+    load_conf "$name"
+
+    local ssh_cmd=(ssh -p "$VM_SSH_PORT" -o StrictHostKeyChecking=accept-new "${VM_USER}@localhost")
+
+    case "$action" in
+        copy)
+            local clip_content
+            clip_content="$("${ssh_cmd[@]}" bash -c \
+                'if command -v wl-paste >/dev/null 2>&1; then wl-paste;
+                 elif command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -o;
+                 elif command -v xsel >/dev/null 2>&1; then xsel --clipboard --output;
+                 else echo "No clipboard tool found. Run: qvm clip $name install" >&2; exit 1; fi' \
+                2>/dev/null)" || die "Failed to read VM clipboard"
+            printf '%s' "$clip_content" | wl-copy
+            info "Copied VM clipboard → host"
+            ;;
+        paste)
+            wl-paste 2>/dev/null | "${ssh_cmd[@]}" bash -c \
+                'if command -v wl-copy >/dev/null 2>&1; then wl-copy;
+                 elif command -v xclip >/dev/null 2>&1; then xclip -selection clipboard;
+                 elif command -v xsel >/dev/null 2>&1; then xsel --clipboard --input;
+                 else echo "No clipboard tool found. Run: qvm clip $name install" >&2; exit 1; fi' \
+                2>/dev/null
+            info "Pasted host clipboard → VM"
+            ;;
+        install)
+            # Detect package manager and install clipboard tools (needs TTY for sudo)
+            info "Installing clipboard tools on '${BOLD}$name${RESET}'"
+            ssh -t -p "$VM_SSH_PORT" -o StrictHostKeyChecking=accept-new \
+                "${VM_USER}@localhost" \
+                'sudo pkill -9 PackageKit 2>/dev/null; sleep 1;
+                 if command -v zypper >/dev/null 2>&1; then sudo zypper install -y wl-clipboard xclip;
+                 elif command -v apt-get >/dev/null 2>&1; then sudo apt-get install -y wl-clipboard xclip;
+                 elif command -v dnf >/dev/null 2>&1; then sudo dnf install -y wl-clipboard xclip;
+                 elif command -v pacman >/dev/null 2>&1; then sudo pacman -S --noconfirm wl-clipboard xclip;
+                 elif command -v apk >/dev/null 2>&1; then sudo apk add wl-clipboard xclip;
+                 else echo "Error: no supported package manager found" >&2; exit 1; fi'
+            info "Done"
+            ;;
+    esac
+}
+
 cmd_list() {
     [[ -d "$VM_BASE" ]] || { echo "No VMs found."; return 0; }
 
@@ -610,6 +707,106 @@ cmd_info() {
     echo "  TRAMP:     /ssh:${VM_USER}@localhost#${VM_SSH_PORT}:/home/${VM_USER}/"
 }
 
+cmd_snapshot() {
+    local name="${1:-}" action="${2:-}" tag="${3:-}"
+
+    [[ -n "$name" ]] || die "Usage: qvm snapshot <name> create|list|restore|delete [tag]"
+    vm_exists "$name" || die "VM '$name' not found"
+
+    case "$action" in
+        create)
+            [[ -n "$tag" ]] || die "Usage: qvm snapshot <name> create <tag>"
+            vm_running "$name" && die "VM '$name' is running. Stop it first: qvm stop $name"
+            info "Creating snapshot '${BOLD}$tag${RESET}' for '${BOLD}$name${RESET}'"
+            qemu-img snapshot -c "$tag" "$(vm_disk "$name")"
+            info "Snapshot '$tag' created"
+            ;;
+        list|ls)
+            qemu-img snapshot -l "$(vm_disk "$name")" 2>/dev/null || info "No snapshots for '$name'"
+            ;;
+        restore|apply)
+            [[ -n "$tag" ]] || die "Usage: qvm snapshot <name> restore <tag>"
+            vm_running "$name" && die "VM '$name' is running. Stop it first: qvm stop $name"
+            info "Restoring snapshot '${BOLD}$tag${RESET}' for '${BOLD}$name${RESET}'"
+            qemu-img snapshot -a "$tag" "$(vm_disk "$name")"
+            info "Snapshot '$tag' restored"
+            ;;
+        delete|rm)
+            [[ -n "$tag" ]] || die "Usage: qvm snapshot <name> delete <tag>"
+            vm_running "$name" && die "VM '$name' is running. Stop it first: qvm stop $name"
+            info "Deleting snapshot '${BOLD}$tag${RESET}' from '${BOLD}$name${RESET}'"
+            qemu-img snapshot -d "$tag" "$(vm_disk "$name")"
+            info "Snapshot '$tag' deleted"
+            ;;
+        *)
+            die "Usage: qvm snapshot <name> create|list|restore|delete [tag]"
+            ;;
+    esac
+}
+
+cmd_clone() {
+    local name="" new_name="" linked=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --linked|-l) linked=true; shift ;;
+            -*)          die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"
+                elif [[ -z "$new_name" ]]; then
+                    new_name="$1"
+                else
+                    die "Unexpected argument: $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    [[ -n "$name" && -n "$new_name" ]] || die "Usage: qvm clone <source> <new-name> [--linked]"
+    vm_exists "$name" || die "VM '$name' not found"
+    vm_running "$name" && die "VM '$name' is running. Stop it first: qvm stop $name"
+    vm_exists "$new_name" && die "VM '$new_name' already exists"
+
+    load_conf "$name"
+
+    # Assign new ports to avoid collisions
+    VM_SSH_PORT="$(next_free_port "$DEFAULT_SSH_PORT")"
+    VM_VNC_DISPLAY="$(next_free_vnc "$DEFAULT_VNC_DISPLAY")"
+    VM_SPICE_PORT="$(next_free_spice "$DEFAULT_SPICE_PORT")"
+
+    mkdir -p "$(vm_dir "$new_name")"
+
+    if $linked; then
+        info "Creating linked clone '${BOLD}$new_name${RESET}' from '${BOLD}$name${RESET}'"
+        local src_disk
+        src_disk="$(realpath "$(vm_disk "$name")")"
+        qemu-img create -f qcow2 -b "$src_disk" -F qcow2 "$(vm_disk "$new_name")"
+    else
+        info "Creating full clone '${BOLD}$new_name${RESET}' from '${BOLD}$name${RESET}'"
+        echo "  Copying disk image..."
+        cp "$(vm_disk "$name")" "$(vm_disk "$new_name")"
+    fi
+
+    save_conf "$new_name"
+
+    echo "  Memory:  $VM_MEMORY"
+    echo "  CPUs:    $VM_CPUS"
+    echo "  SSH:     localhost:$VM_SSH_PORT"
+    if [[ "$VM_DISPLAY" == "spice" ]]; then
+        echo "  SPICE:   localhost:$VM_SPICE_PORT"
+    else
+        echo "  VNC:     :$VM_VNC_DISPLAY (port $((5900 + VM_VNC_DISPLAY)))"
+    fi
+    if $linked; then
+        echo ""
+        warn "Linked clone depends on source disk: $(vm_disk "$name")"
+    fi
+    echo ""
+    info "Done"
+}
+
 cmd_rename() {
     local old="${1:-}" new="${2:-}"
     [[ -n "$old" && -n "$new" ]] || die "Usage: qvm rename <old-name> <new-name>"
@@ -662,6 +859,15 @@ Usage:
   qvm vnc <name>                     Open VNC viewer to a VM
   qvm spice <name>                   Open SPICE viewer to a VM
   qvm keyboard <name>                Setup keyboard remaps + sticky keys
+  qvm display <name> [vnc|spice]     Show or switch display type
+  qvm clip <name> copy               Copy VM clipboard to host
+  qvm clip <name> paste              Paste host clipboard to VM
+  qvm clip <name> install            Install xclip on the VM
+  qvm snapshot <name> create <tag>   Create a snapshot (stopped VMs only)
+  qvm snapshot <name> list           List snapshots
+  qvm snapshot <name> restore <tag>  Restore a snapshot (stopped VMs only)
+  qvm snapshot <name> delete <tag>   Delete a snapshot
+  qvm clone <source> <new> [--linked] Clone a VM (full copy or linked/COW)
   qvm list                           List all VMs
   qvm info <name>                    Show VM details
   qvm rename <old> <new>             Rename a VM
@@ -702,6 +908,10 @@ case "$cmd" in
     vnc)        cmd_vnc "$@" ;;
     spice)      cmd_spice "$@" ;;
     keyboard)   cmd_keyboard "$@" ;;
+    display)    cmd_display "$@" ;;
+    clip)       cmd_clip "$@" ;;
+    snapshot)   cmd_snapshot "$@" ;;
+    clone)      cmd_clone "$@" ;;
     list|ls)    cmd_list "$@" ;;
     info)       cmd_info "$@" ;;
     rename|mv)  cmd_rename "$@" ;;

@@ -1,6 +1,39 @@
 #+title: Changelog
 #+author: James Dyer
 
+* 0.4.0 — <2026-04-04>
+
+Snapshots and VM cloning.
+
+** Added
+
+- ~qvm snapshot <name> create|list|restore|delete [tag]~ for managing qcow2 internal snapshots on stopped VMs
+- ~qvm clone <source> <new-name> [--linked]~ to clone a VM
+  - Full clone: independent copy of the entire disk
+  - Linked clone (~--linked~): copy-on-write overlay backed by the source disk (fast, space-efficient)
+  - Auto-assigns new SSH, VNC, and SPICE ports to avoid collisions
+- Emacs: ~qvm-snapshot-create~, ~qvm-snapshot-list~, ~qvm-snapshot-restore~, ~qvm-snapshot-delete~ interactive commands
+- Emacs: ~qvm-clone~ interactive command with prompt for full vs linked clone
+- Emacs: ~n~ (snapshot create), ~N~ (snapshot list), ~R~ (snapshot restore), ~X~ (snapshot delete), ~C~ (clone) keybindings in list buffer
+- Emacs: ~qvm--snapshot-tags~ helper parses ~qemu-img snapshot -l~ output for completing-read on restore and delete
+
+* 0.3.0 — <2026-04-03>
+
+Clipboard sharing over SSH, display switching, and SwayWM integration notes.
+
+** Added
+
+- ~qvm clip <name> copy|paste~ for clipboard sharing over SSH between host and VM
+  - Auto-detects guest clipboard tool: ~wl-paste~/~wl-copy~ (Wayland), ~xclip~ (X11), ~xsel~
+  - Single SSH call per operation (no double password prompts)
+- ~qvm clip <name> install~ to install clipboard tools (~wl-clipboard~ + ~xclip~) on the guest
+  - Auto-detects package manager (zypper, apt, dnf, pacman, apk)
+  - Kills PackageKit if it is blocking the package manager
+  - Runs in a terminal buffer from Emacs for interactive sudo
+- ~qvm display <name> [vnc|spice]~ to show or switch display type without recreating the VM
+- Emacs: ~w~ (clip copy), ~y~ (clip paste), ~I~ (clip install), ~D~ (toggle display) keybindings in list buffer
+- Documented SwayWM ~shortcuts_inhibitor~ workaround for SPICE keyboard grab
+
 * 0.2.0 — <2026-04-03>
 
 SPICE display support, keyboard setup command, and Emacs UI updates.

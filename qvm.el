@@ -1,7 +1,7 @@
 ;;; qvm.el --- Emacs interface to the qvm QEMU VM manager -*- lexical-binding: t; -*-
 
 ;; Author: James Dyer
-;; Version: 0.2.0
+;; Version: 0.4.0
 ;; Keywords: tools, qemu, vm
 ;; Package-Requires: ((emacs "28.1"))
 
@@ -28,6 +28,11 @@
 ;;   d        — open dired via TRAMP
 ;;   e        — open eshell via TRAMP
 ;;   S        — scp files to VM
+;;   C        — clone VM
+;;   n        — create snapshot
+;;   N        — list snapshots
+;;   R        — restore snapshot
+;;   X        — delete snapshot
 ;;   i        — show VM info
 ;;   g        — refresh
 ;;   q        — quit
@@ -116,6 +121,19 @@
          (remote-path (or path (format "/home/%s/" user))))
     (format "/ssh:%s@localhost#%s:%s" user port remote-path)))
 
+(defun qvm--snapshot-tags (name)
+  "Return a list of snapshot tag names for VM NAME."
+  (let ((disk (expand-file-name (concat name "/disk.qcow2") qvm-base-dir)))
+    (when (file-exists-p disk)
+      (let ((output (shell-command-to-string
+                     (format "qemu-img snapshot -l %s 2>/dev/null"
+                             (shell-quote-argument disk)))))
+        (let (tags)
+          (dolist (line (split-string output "\n" t))
+            (when (string-match "^[0-9]+\\s-+\\(\\S-+\\)" line)
+              (push (match-string 1 line) tags)))
+          (nreverse tags))))))
+
 ;; ── Commands ──────────────────────────────────────────────────────────────────
 
 (defun qvm--run-command (args &optional on-finish)
@@ -188,12 +206,38 @@ ON-FINISH is an optional callback called with no args when the process exits."
   (qvm--run-command (list "spice" name)))
 
 ;;;###autoload
+(defun qvm-display (name)
+  "Toggle display type between vnc and spice for VM NAME."
+  (interactive (list (completing-read "Toggle display for VM: " (qvm--list-vms) nil t)))
+  (let* ((conf (qvm--read-conf name))
+         (current (or (qvm--conf-get conf "VM_DISPLAY") "vnc"))
+         (new (if (string= current "vnc") "spice" "vnc")))
+    (qvm--run-command (list "display" name new)
+                      (lambda () (qvm-list-refresh)))))
+
+;;;###autoload
 (defun qvm-keyboard (name)
   "Setup keyboard remaps and sticky keys on VM NAME via SSH."
   (interactive (list (completing-read "Keyboard setup for VM: "
                                       (seq-filter #'qvm--running-p (qvm--list-vms))
                                       nil t)))
   (qvm--run-command (list "keyboard" name)))
+
+;;;###autoload
+(defun qvm-clip-copy (name)
+  "Copy VM NAME clipboard to host clipboard (kill ring)."
+  (interactive (list (completing-read "Copy clipboard from VM: "
+                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      nil t)))
+  (qvm--run-command (list "clip" name "copy")))
+
+;;;###autoload
+(defun qvm-clip-paste (name)
+  "Paste host clipboard to VM NAME clipboard."
+  (interactive (list (completing-read "Paste clipboard to VM: "
+                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      nil t)))
+  (qvm--run-command (list "clip" name "paste")))
 
 ;;;###autoload
 (defun qvm-dired (name)
@@ -278,6 +322,70 @@ Otherwise, prompts for a file."
                      (insert (format "\n[%s]" (string-trim event)))))))))
 
 ;;;###autoload
+(defun qvm-snapshot-create (name tag)
+  "Create a snapshot TAG for stopped VM NAME."
+  (interactive
+   (let* ((vms (seq-remove #'qvm--running-p (qvm--list-vms)))
+          (name (completing-read "Snapshot VM: " vms nil t))
+          (tag (read-string "Snapshot tag: ")))
+     (list name tag)))
+  (when (qvm--running-p name)
+    (user-error "VM '%s' is running — stop it first" name))
+  (qvm--run-command (list "snapshot" name "create" tag)))
+
+;;;###autoload
+(defun qvm-snapshot-list (name)
+  "List snapshots for VM NAME."
+  (interactive (list (completing-read "List snapshots for VM: " (qvm--list-vms) nil t)))
+  (qvm--run-command (list "snapshot" name "list")))
+
+;;;###autoload
+(defun qvm-snapshot-restore (name tag)
+  "Restore snapshot TAG for stopped VM NAME."
+  (interactive
+   (let* ((vms (seq-remove #'qvm--running-p (qvm--list-vms)))
+          (name (completing-read "Restore snapshot for VM: " vms nil t))
+          (tags (qvm--snapshot-tags name))
+          (tag (completing-read "Snapshot to restore: " tags nil t)))
+     (list name tag)))
+  (when (qvm--running-p name)
+    (user-error "VM '%s' is running — stop it first" name))
+  (when (yes-or-no-p (format "Restore snapshot '%s' for VM '%s'? " tag name))
+    (qvm--run-command (list "snapshot" name "restore" tag))))
+
+;;;###autoload
+(defun qvm-snapshot-delete (name tag)
+  "Delete snapshot TAG from stopped VM NAME."
+  (interactive
+   (let* ((vms (seq-remove #'qvm--running-p (qvm--list-vms)))
+          (name (completing-read "Delete snapshot from VM: " vms nil t))
+          (tags (qvm--snapshot-tags name))
+          (tag (completing-read "Snapshot to delete: " tags nil t)))
+     (list name tag)))
+  (when (qvm--running-p name)
+    (user-error "VM '%s' is running — stop it first" name))
+  (when (yes-or-no-p (format "Delete snapshot '%s' from VM '%s'? " tag name))
+    (qvm--run-command (list "snapshot" name "delete" tag))))
+
+;;;###autoload
+(defun qvm-clone (name new-name linked)
+  "Clone VM NAME to NEW-NAME.
+With prefix argument or LINKED non-nil, create a linked (COW) clone."
+  (interactive
+   (let* ((name (completing-read "Clone VM: " (qvm--list-vms) nil t))
+          (new-name (read-string "New VM name: "))
+          (linked (yes-or-no-p "Create linked (COW) clone? ")))
+     (list name new-name linked)))
+  (when (qvm--running-p name)
+    (user-error "VM '%s' is running — stop it first" name))
+  (when (string-empty-p new-name)
+    (user-error "New VM name cannot be empty"))
+  (qvm--run-command (if linked
+                        (list "clone" name new-name "--linked")
+                      (list "clone" name new-name))
+                    (lambda () (qvm-list-refresh))))
+
+;;;###autoload
 (defun qvm-info (name)
   "Show info for VM NAME."
   (interactive (list (completing-read "VM info: " (qvm--list-vms) nil t)))
@@ -323,8 +431,17 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "d")   #'qvm-list-dired)
     (define-key map (kbd "e")   #'qvm-list-eshell)
     (define-key map (kbd "i")   #'qvm-list-info)
+    (define-key map (kbd "D")   #'qvm-list-display)
     (define-key map (kbd "k")   #'qvm-list-keyboard)
+    (define-key map (kbd "w")   #'qvm-list-clip-copy)
+    (define-key map (kbd "y")   #'qvm-list-clip-paste)
+    (define-key map (kbd "I")   #'qvm-list-clip-install)
     (define-key map (kbd "S")   #'qvm-list-scp)
+    (define-key map (kbd "C")   #'qvm-list-clone)
+    (define-key map (kbd "n")   #'qvm-list-snapshot-create)
+    (define-key map (kbd "N")   #'qvm-list-snapshot-list)
+    (define-key map (kbd "R")   #'qvm-list-snapshot-restore)
+    (define-key map (kbd "X")   #'qvm-list-snapshot-delete)
     (define-key map (kbd "g")   #'qvm-list-refresh)
     (define-key map (kbd "q")   #'quit-window)
     map)
@@ -430,10 +547,37 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
   (interactive)
   (qvm-info (qvm-list--current-name)))
 
+(defun qvm-list-display ()
+  "Toggle display type (vnc/spice) for VM at point."
+  (interactive)
+  (qvm-display (qvm-list--current-name)))
+
 (defun qvm-list-keyboard ()
   "Setup keyboard remaps and sticky keys on VM at point."
   (interactive)
   (qvm-keyboard (qvm-list--current-name)))
+
+(defun qvm-list-clip-copy ()
+  "Copy VM clipboard to host (w = kill/copy in Emacs)."
+  (interactive)
+  (qvm-clip-copy (qvm-list--current-name)))
+
+(defun qvm-list-clip-paste ()
+  "Paste host clipboard to VM (y = yank/paste in Emacs)."
+  (interactive)
+  (qvm-clip-paste (qvm-list--current-name)))
+
+(defun qvm-list-clip-install ()
+  "Install xclip on the VM at point via a terminal buffer."
+  (interactive)
+  (let ((name (qvm-list--current-name)))
+    (when (yes-or-no-p (format "Install xclip on '%s'? " name))
+      (let ((buf-name (format "*qvm clip install: %s*" name)))
+        (when (get-buffer buf-name)
+          (kill-buffer buf-name))
+        (let ((buf (make-term buf-name qvm-executable nil "clip" name "install")))
+          (with-current-buffer buf (term-mode) (term-char-mode))
+          (pop-to-buffer buf))))))
 
 (defun qvm-list-scp ()
   "SCP files to the VM at point."
@@ -447,6 +591,41 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
                     (user (qvm--conf-get conf "VM_USER")))
                (read-string "Remote directory: "
                             (format "/home/%s/" user))))))
+
+(defun qvm-list-clone ()
+  "Clone the VM at point."
+  (interactive)
+  (let ((name (qvm-list--current-name)))
+    (qvm-clone name
+               (read-string (format "Clone '%s' as: " name))
+               (yes-or-no-p "Create linked (COW) clone? "))))
+
+(defun qvm-list-snapshot-create ()
+  "Create a snapshot for the VM at point."
+  (interactive)
+  (let ((name (qvm-list--current-name)))
+    (qvm-snapshot-create name (read-string (format "Snapshot tag for '%s': " name)))))
+
+(defun qvm-list-snapshot-list ()
+  "List snapshots for the VM at point."
+  (interactive)
+  (qvm-snapshot-list (qvm-list--current-name)))
+
+(defun qvm-list-snapshot-restore ()
+  "Restore a snapshot for the VM at point."
+  (interactive)
+  (let* ((name (qvm-list--current-name))
+         (tags (qvm--snapshot-tags name))
+         (tag (completing-read (format "Restore snapshot for '%s': " name) tags nil t)))
+    (qvm-snapshot-restore name tag)))
+
+(defun qvm-list-snapshot-delete ()
+  "Delete a snapshot from the VM at point."
+  (interactive)
+  (let* ((name (qvm-list--current-name))
+         (tags (qvm--snapshot-tags name))
+         (tag (completing-read (format "Delete snapshot from '%s': " name) tags nil t)))
+    (qvm-snapshot-delete name tag)))
 
 (defun qvm-list-create ()
   "Create a new VM from an ISO image."
@@ -464,7 +643,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
       (tabulated-list-print)
       (qvm-list--goto-first-entry))
     (pop-to-buffer buf)
-    (message "r=run  s=start  x=stop  c=create  v=vnc  V=spice  k=keyboard  d=dired  e=eshell  S=scp  i=info  g=refresh  q=quit")))
+    (message "r=run  s=start  x=stop  c=create  C=clone  n=snapshot  N=snap-list  R=snap-restore  X=snap-del  v=vnc  V=spice  d=dired  e=eshell  i=info  g=refresh  q=quit")))
 
 (provide 'qvm)
 
