@@ -27,7 +27,8 @@
 ;;   V        — open SPICE viewer
 ;;   d        — open dired via TRAMP
 ;;   e        — open eshell via TRAMP
-;;   S        — scp files to VM
+;;   S        — rsync files to VM
+;;   P        — push SSH key to VM (passwordless access)
 ;;   C        — clone VM
 ;;   n        — create snapshot
 ;;   N        — list snapshots
@@ -113,13 +114,26 @@
           (format "du -sh %s 2>/dev/null | cut -f1" (shell-quote-argument disk))))
       "?")))
 
+(defun qvm--ssh-config-host-p (name)
+  "Return non-nil if SSH config has a Host entry for qvm-NAME."
+  (let ((ssh-config (expand-file-name "~/.ssh/config")))
+    (when (file-exists-p ssh-config)
+      (with-temp-buffer
+        (insert-file-contents ssh-config)
+        (goto-char (point-min))
+        (re-search-forward (format "^Host qvm-%s$" (regexp-quote name)) nil t)))))
+
 (defun qvm--tramp-path (name &optional path)
-  "Return a TRAMP path to VM NAME at remote PATH (default /home/user/)."
+  "Return a TRAMP path to VM NAME at remote PATH (default /home/user/).
+Uses the SSH config alias qvm-NAME if available (set up by `qvm ssh-copy-id'),
+otherwise falls back to /ssh:user@localhost#port:path."
   (let* ((conf (qvm--read-conf name))
          (user (qvm--conf-get conf "VM_USER"))
          (port (qvm--conf-get conf "VM_SSH_PORT"))
          (remote-path (or path (format "/home/%s/" user))))
-    (format "/ssh:%s@localhost#%s:%s" user port remote-path)))
+    (if (qvm--ssh-config-host-p name)
+        (format "/ssh:qvm-%s:%s" name remote-path)
+      (format "/ssh:%s@localhost#%s:%s" user port remote-path))))
 
 (defun qvm--snapshot-tags (name)
   "Return a list of snapshot tag names for VM NAME."
@@ -240,6 +254,22 @@ ON-FINISH is an optional callback called with no args when the process exits."
   (qvm--run-command (list "clip" name "paste")))
 
 ;;;###autoload
+(defun qvm-ssh-copy-id (name)
+  "Copy SSH public key to VM NAME for passwordless access.
+Runs in a terminal buffer since it may prompt for a password."
+  (interactive (list (completing-read "Push SSH key to VM: "
+                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      nil t)))
+  (unless (qvm--running-p name)
+    (user-error "VM '%s' is not running" name))
+  (let ((buf-name (format "*qvm ssh-copy-id: %s*" name)))
+    (when (get-buffer buf-name)
+      (kill-buffer buf-name))
+    (let ((buf (make-term buf-name qvm-executable nil "ssh-copy-id" name)))
+      (with-current-buffer buf (term-mode) (term-char-mode))
+      (pop-to-buffer buf))))
+
+;;;###autoload
 (defun qvm-dired (name)
   "Open dired on VM NAME via TRAMP."
   (interactive (list (completing-read "Dired into VM: "
@@ -269,7 +299,7 @@ ON-FINISH is an optional callback called with no args when the process exits."
 
 ;;;###autoload
 (defun qvm-scp (name files remote-dir)
-  "Copy FILES to VM NAME at REMOTE-DIR via scp.
+  "Copy FILES to VM NAME at REMOTE-DIR via rsync over SSH.
 When called from a dired buffer, uses the marked files or the file at point.
 Otherwise, prompts for a file."
   (interactive
@@ -289,19 +319,22 @@ Otherwise, prompts for a file."
   (let* ((conf (qvm--read-conf name))
          (user (qvm--conf-get conf "VM_USER"))
          (port (qvm--conf-get conf "VM_SSH_PORT"))
-         (dest (format "%s@localhost:%s" user remote-dir))
+         (ssh-cmd (if (qvm--ssh-config-host-p name)
+                      "ssh"
+                    (format "ssh -p %s" port)))
+         (dest-host (if (qvm--ssh-config-host-p name)
+                        (format "qvm-%s" name)
+                      (format "%s@localhost" user)))
+         (dest (format "%s:%s" dest-host remote-dir))
          (expanded (mapcar #'expand-file-name files))
-         (has-dirs (seq-some #'file-directory-p expanded))
-         (args (append (list "-P" port)
-                       (when has-dirs (list "-r"))
+         (args (append (list "-avz" "--progress" "-e" ssh-cmd)
                        expanded (list dest)))
          (buf (get-buffer-create qvm-output-buffer)))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
-      (insert (format "$ scp -P %s %s%s %s\n\n"
-                      port
-                      (if has-dirs "-r " "")
+      (insert (format "$ rsync -avz --progress -e \"%s\" %s %s\n\n"
+                      ssh-cmd
                       (mapconcat (lambda (f) (file-name-nondirectory f)) files " ")
                       dest))
       (setq buffer-read-only t))
@@ -309,7 +342,7 @@ Otherwise, prompts for a file."
     (make-process
      :name "qvm-scp"
      :buffer buf
-     :command (cons "scp" args)
+     :command (cons "rsync" args)
      :filter (lambda (proc str)
                (with-current-buffer (process-buffer proc)
                  (let ((inhibit-read-only t))
@@ -437,6 +470,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "y")   #'qvm-list-clip-paste)
     (define-key map (kbd "I")   #'qvm-list-clip-install)
     (define-key map (kbd "S")   #'qvm-list-scp)
+    (define-key map (kbd "P")   #'qvm-list-ssh-copy-id)
     (define-key map (kbd "C")   #'qvm-list-clone)
     (define-key map (kbd "n")   #'qvm-list-snapshot-create)
     (define-key map (kbd "N")   #'qvm-list-snapshot-list)
@@ -578,6 +612,11 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
         (let ((buf (make-term buf-name qvm-executable nil "clip" name "install")))
           (with-current-buffer buf (term-mode) (term-char-mode))
           (pop-to-buffer buf))))))
+
+(defun qvm-list-ssh-copy-id ()
+  "Push SSH public key to the VM at point."
+  (interactive)
+  (qvm-ssh-copy-id (qvm-list--current-name)))
 
 (defun qvm-list-scp ()
   "SCP files to the VM at point."

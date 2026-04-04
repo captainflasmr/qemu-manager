@@ -9,6 +9,7 @@
 #   qvm run <name> [--offline]          Start a VM and open viewer
 #   qvm stop <name>                    Stop a running VM
 #   qvm ssh <name> [ssh-args...]       SSH into a VM
+#   qvm ssh-copy-id <name>             Copy SSH public key to a VM
 #   qvm scp <name> <src> <dest>        SCP files to/from a VM (use : for remote)
 #   qvm vnc <name>                     Open VNC viewer to a VM
 #   qvm spice <name>                   Open SPICE viewer to a VM
@@ -448,6 +449,59 @@ cmd_ssh() {
         "${VM_USER}@localhost" "$@" 2>/dev/null
 }
 
+cmd_ssh_copy_id() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "Usage: qvm ssh-copy-id <name>"
+    vm_exists "$name" || die "VM '$name' not found"
+    vm_running "$name" || die "VM '$name' is not running. Start it first: qvm start $name"
+
+    load_conf "$name"
+
+    info "Copying SSH public key to '${BOLD}$name${RESET}'"
+    ssh-copy-id -p "$VM_SSH_PORT" \
+        -o StrictHostKeyChecking=accept-new \
+        "${VM_USER}@localhost"
+
+    # Fix remote permissions — sshd silently ignores authorized_keys if these are wrong
+    info "Fixing remote SSH permissions"
+    ssh -p "$VM_SSH_PORT" \
+        -o StrictHostKeyChecking=accept-new \
+        "${VM_USER}@localhost" \
+        'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys' 2>/dev/null
+
+    # Verify key auth works without a password
+    if ssh -p "$VM_SSH_PORT" \
+        -o StrictHostKeyChecking=accept-new \
+        -o BatchMode=yes \
+        "${VM_USER}@localhost" true 2>/dev/null; then
+        info "Verified: key auth works. SSH to '$name' is now passwordless."
+
+        # Add SSH config entry so TRAMP and CLI pick up the right options
+        local ssh_config="$HOME/.ssh/config"
+        local host_alias="qvm-$name"
+        if ! grep -q "^Host $host_alias\$" "$ssh_config" 2>/dev/null; then
+            info "Adding SSH config entry '${BOLD}$host_alias${RESET}'"
+            mkdir -p "$HOME/.ssh"
+            cat >> "$ssh_config" <<SSHEOF
+
+# qvm: $name
+Host $host_alias
+    HostName localhost
+    Port $VM_SSH_PORT
+    User $VM_USER
+    BatchMode yes
+    StrictHostKeyChecking accept-new
+    LogLevel ERROR
+SSHEOF
+            chmod 600 "$ssh_config"
+            echo "  Added Host $host_alias to ~/.ssh/config"
+        fi
+    else
+        warn "Key auth verification failed. You may still be prompted for a password."
+        echo "  Check the VM's sshd config (PubkeyAuthentication) and home directory permissions."
+    fi
+}
+
 cmd_scp() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "Usage: qvm scp <name> [-r] <src> <dest>"
@@ -704,7 +758,12 @@ cmd_info() {
     else
         echo "  VNC:       vncviewer localhost:$((5900 + VM_VNC_DISPLAY))"
     fi
-    echo "  TRAMP:     /ssh:${VM_USER}@localhost#${VM_SSH_PORT}:/home/${VM_USER}/"
+    local host_alias="qvm-$name"
+    if grep -q "^Host $host_alias$" "$HOME/.ssh/config" 2>/dev/null; then
+        echo "  TRAMP:     /ssh:$host_alias:/home/${VM_USER}/"
+    else
+        echo "  TRAMP:     /ssh:${VM_USER}@localhost#${VM_SSH_PORT}:/home/${VM_USER}/"
+    fi
 }
 
 cmd_snapshot() {
@@ -855,6 +914,7 @@ Usage:
   qvm run <name> [--offline]          Start a VM and open viewer
   qvm stop <name>                    Stop a VM
   qvm ssh <name> [args...]           SSH into a VM
+  qvm ssh-copy-id <name>             Copy SSH public key to a VM
   qvm scp <name> <src> <dest>        Copy files (: prefix = remote)
   qvm vnc <name>                     Open VNC viewer to a VM
   qvm spice <name>                   Open SPICE viewer to a VM
@@ -904,6 +964,7 @@ case "$cmd" in
     run)        cmd_run "$@" ;;
     stop)       cmd_stop "$@" ;;
     ssh)        cmd_ssh "$@" ;;
+    ssh-copy-id) cmd_ssh_copy_id "$@" ;;
     scp)        cmd_scp "$@" ;;
     vnc)        cmd_vnc "$@" ;;
     spice)      cmd_spice "$@" ;;
