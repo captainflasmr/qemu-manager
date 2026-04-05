@@ -29,14 +29,14 @@ External tools (must be in ~PATH~):
 
 | Tool                   | Used for                                 |
 |------------------------+------------------------------------------|
-| ~qemu-system-x86_64~  | Running VMs                              |
-| ~qemu-img~            | Creating disks, snapshots, linked clones |
-| ~ss~                  | Port availability checking               |
-| ~vncviewer~           | VNC display (e.g. TigerVNC)              |
-| ~spicy~               | SPICE display (from ~spice-gtk~)         |
-| ~ssh~ / ~ssh-copy-id~ | Remote commands, key setup                |
-| ~rsync~               | File transfer to VMs                     |
-| ~wl-copy~ / ~wl-paste~| Host clipboard (Wayland)                 |
+| ~qemu-system-x86_64~   | Running VMs                              |
+| ~qemu-img~             | Creating disks, snapshots, linked clones |
+| ~ss~                   | Port availability checking               |
+| ~vncviewer~            | VNC display (e.g. TigerVNC)              |
+| ~spicy~                | SPICE display (from ~spice-gtk~)         |
+| ~ssh~ / ~ssh-copy-id~  | Remote commands, key setup               |
+| ~rsync~                | File transfer to VMs                     |
+| ~wl-copy~ / ~wl-paste~ | Host clipboard (Wayland)                 |
 
 * Installation
 
@@ -65,33 +65,33 @@ Run ~M-x qvm-list~ to open the VM manager buffer, then press ~?~ to open the tra
 
 ** Keybindings in the VM List Buffer
 
-| Key         | Action                                       |
-|-------------+----------------------------------------------|
-| ~RET~ / ~r~ | Run (start VM + open viewer)                 |
-| ~s~         | Start VM                                     |
-| ~x~         | Stop VM (with confirmation)                  |
-| ~c~         | Create new VM (prompts for ISO, name, etc.)  |
-| ~C~         | Clone VM (full or linked/COW)                |
-| ~n~ / ~p~   | Next / previous line                         |
-| ~+~         | Create snapshot                              |
-| ~N~         | List snapshots                               |
-| ~R~         | Restore snapshot                             |
-| ~X~         | Delete snapshot                              |
-| ~v~         | Open VNC viewer                              |
-| ~V~         | Open SPICE viewer                            |
-| ~D~         | Toggle display type (vnc/spice)              |
-| ~k~         | Setup keyboard remaps + sticky keys          |
-| ~w~         | Copy VM clipboard → host (kill/copy)         |
-| ~y~         | Paste host clipboard → VM (yank)             |
-| ~I~         | Install clipboard tools on VM                |
-| ~d~         | Open dired on VM via TRAMP                   |
-| ~e~         | Open eshell on VM via TRAMP                  |
-| ~S~         | SCP marked files to VM                       |
-| ~P~         | Push SSH key for passwordless access         |
-| ~i~         | Show VM info                                 |
-| ~g~         | Refresh VM list                              |
-| ~q~         | Quit window                                  |
-| ~?~         | Open transient menu                          |
+| Key         | Action                                      |
+|-------------+---------------------------------------------|
+| ~RET~ / ~r~ | Run (start VM + open viewer)                |
+| ~s~         | Start VM                                    |
+| ~x~         | Stop VM (with confirmation)                 |
+| ~c~         | Create new VM (prompts for ISO, name, etc.) |
+| ~C~         | Clone VM (full or linked/COW)               |
+| ~n~ / ~p~   | Next / previous line                        |
+| ~+~         | Create snapshot                             |
+| ~N~         | List snapshots                              |
+| ~R~         | Restore snapshot                            |
+| ~X~         | Delete snapshot                             |
+| ~v~         | Open VNC viewer                             |
+| ~V~         | Open SPICE viewer                           |
+| ~D~         | Toggle display type (vnc/spice)             |
+| ~k~         | Setup keyboard remaps + sticky keys         |
+| ~w~         | Copy VM clipboard → host (kill/copy)        |
+| ~y~         | Paste host clipboard → VM (yank)            |
+| ~I~         | Install clipboard tools on VM               |
+| ~d~         | Open dired on VM via TRAMP                  |
+| ~e~         | Open eshell on VM via TRAMP                 |
+| ~S~         | SCP marked files to VM                      |
+| ~P~         | Push SSH key for passwordless access        |
+| ~i~         | Show VM info                                |
+| ~g~         | Refresh VM list                             |
+| ~q~         | Quit window                                 |
+| ~?~         | Open transient menu                         |
 
 ** Snapshots
 
@@ -160,22 +160,30 @@ Requires ~wl-copy~ / ~wl-paste~ on the host (included with sway).
 
 * Customization
 
-| Variable                    | Description                                  | Default                        |
-|-----------------------------+----------------------------------------------+--------------------------------|
-| ~qvm-base-dir~             | Directory where VMs are stored               | =~/VM=                         |
-| ~qvm-qemu-binary~          | Path to QEMU system emulator                 | =qemu-system-x86_64= in PATH  |
-| ~qvm-vnc-viewer~           | VNC viewer program                           | =vncviewer= in PATH           |
-| ~qvm-vnc-viewer-args~      | Extra args for VNC viewer                    | =("-RemoteResize=1")=          |
-| ~qvm-spice-viewer~         | SPICE viewer program                         | =spicy= in PATH               |
-| ~qvm-default-memory~       | Default memory for new VMs                   | ="4G"=                         |
-| ~qvm-default-cpus~         | Default CPU count for new VMs                | ="4"=                          |
-| ~qvm-default-disk~         | Default disk size for new VMs                | ="40G"=                        |
-| ~qvm-default-ssh-port~     | Starting SSH port for auto-assignment        | =2222=                         |
-| ~qvm-default-vnc-display~  | Starting VNC display for auto-assignment     | =1=                            |
-| ~qvm-default-spice-port~   | Starting SPICE port for auto-assignment      | =5930=                         |
-| ~qvm-default-display~      | Default display type (="vnc"= or ="spice"=)  | ="vnc"=                        |
-| ~qvm-default-user~         | Default SSH username for new VMs             | Current login name             |
-| ~qvm-output-buffer~        | Buffer name for command output               | ="*qvm output*"=              |
+| Variable                  | Description                                 | Default                      |
+|---------------------------+---------------------------------------------+------------------------------|
+| ~qvm-base-dir~            | Directory where VMs are stored              | =~/VM=                       |
+| ~qvm-qemu-binary~         | Path to QEMU system emulator                | =qemu-system-x86_64= in PATH |
+| ~qvm-vnc-viewer~          | VNC viewer program                          | =vncviewer= in PATH          |
+| ~qvm-vnc-viewer-args~     | Extra args for VNC viewer                   | =("-RemoteResize=1")=        |
+| ~qvm-spice-viewer~        | SPICE viewer program                        | =spicy= in PATH              |
+| ~qvm-default-memory~      | Default memory for new VMs                  | ="4G"=                       |
+| ~qvm-default-cpus~        | Default CPU count for new VMs               | ="4"=                        |
+| ~qvm-default-disk~        | Default disk size for new VMs               | ="40G"=                      |
+| ~qvm-default-ssh-port~    | Starting SSH port for auto-assignment       | =2222=                       |
+| ~qvm-default-vnc-display~ | Starting VNC display for auto-assignment    | =1=                          |
+| ~qvm-default-spice-port~  | Starting SPICE port for auto-assignment     | =5930=                       |
+| ~qvm-default-display~     | Default display type (="vnc"= or ="spice"=) | ="vnc"=                      |
+| ~qvm-default-user~        | Default SSH username for new VMs            | Current login name           |
+| ~qvm-output-buffer~       | Buffer name for command output              | ="*qvm output*"=             |
+
+* Alternatives
+
+| Package            | Description                        | Difference from qvm.el                                                                           |
+|--------------------+------------------------------------+--------------------------------------------------------------------------------------------------|
+| [[https://github.com/Arian-D/evmm][evmm]]               | Minimalistic VM launcher for Emacs | Declare VMs and start them -- no stop, snapshots, cloning, list UI, TRAMP, or display management |
+| [[https://github.com/stsquad/qemu-mode][qemu-mode]]          | Comint mode for QEMU development   | Aimed at kernel/QEMU developers (boot kernel + rootfs), not end-user VM management               |
+| [[https://github.com/jsynacek/emacs-virt-manager][emacs-virt-manager]] | Emacs front-end for libvirt        | Requires the full libvirt/virt-manager stack rather than calling QEMU directly                   |
 
 * License
 
