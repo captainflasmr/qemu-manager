@@ -62,7 +62,8 @@ Run ~M-x qvm-list~ to open the VM manager buffer, then press ~?~ to open the tra
 | ~x~         | Stop VM (with confirmation)                  |
 | ~c~         | Create new VM (prompts for ISO, name, etc.)  |
 | ~C~         | Clone VM (full or linked/COW)                |
-| ~n~         | Create snapshot                              |
+| ~n~ / ~p~   | Next / previous line                         |
+| ~+~         | Create snapshot                              |
 | ~N~         | List snapshots                               |
 | ~R~         | Restore snapshot                             |
 | ~X~         | Delete snapshot                              |
@@ -92,7 +93,7 @@ qvm snapshot myvm restore base-install  # restore to a snapshot
 qvm snapshot myvm delete base-install   # delete a snapshot
 #+end_src
 
-In the Emacs list buffer, ~n~ creates a snapshot and ~R~ / ~X~ restore / delete with completing-read over existing tags. ~N~ lists all snapshots for the VM at point.
+In the Emacs list buffer, ~+~ creates a snapshot and ~R~ / ~X~ restore / delete with completing-read over existing tags. ~N~ lists all snapshots for the VM at point.
 
 ** Cloning
 

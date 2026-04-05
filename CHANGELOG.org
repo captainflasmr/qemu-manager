@@ -14,6 +14,8 @@ Transient menu for discoverable command access.
 
 ** Changed
 
+- ~n~ / ~p~ now navigate the list (next/previous line)
+- Snapshot create moved from ~n~ to ~+~
 - Removed minibuffer keybinding hint on ~qvm-list~ startup (replaced by transient menu)
 
 * 0.4.0 — <2026-04-04>

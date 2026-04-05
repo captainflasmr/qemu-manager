@@ -32,7 +32,7 @@
 ;;   S        — rsync files to VM
 ;;   P        — push SSH key to VM (passwordless access)
 ;;   C        — clone VM
-;;   n        — create snapshot
+;;   +        — create snapshot
 ;;   N        — list snapshots
 ;;   R        — restore snapshot
 ;;   X        — delete snapshot
@@ -476,7 +476,9 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "S")   #'qvm-list-scp)
     (define-key map (kbd "P")   #'qvm-list-ssh-copy-id)
     (define-key map (kbd "C")   #'qvm-list-clone)
-    (define-key map (kbd "n")   #'qvm-list-snapshot-create)
+    (define-key map (kbd "n")   #'next-line)
+    (define-key map (kbd "p")   #'previous-line)
+    (define-key map (kbd "+")   #'qvm-list-snapshot-create)
     (define-key map (kbd "N")   #'qvm-list-snapshot-list)
     (define-key map (kbd "R")   #'qvm-list-snapshot-restore)
     (define-key map (kbd "X")   #'qvm-list-snapshot-delete)
@@ -707,7 +709,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     ("e" "Eshell (TRAMP)"     qvm-list-eshell)]]
   [:if (lambda () (derived-mode-p 'qvm-list-mode))
    ["Snapshots"
-    ("n" "Create snapshot"    qvm-list-snapshot-create)
+    ("+" "Create snapshot"    qvm-list-snapshot-create)
     ("N" "List snapshots"     qvm-list-snapshot-list)
     ("R" "Restore snapshot"   qvm-list-snapshot-restore)
     ("X" "Delete snapshot"    qvm-list-snapshot-delete)]
