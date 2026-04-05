@@ -1,6 +1,21 @@
 #+title: Changelog
 #+author: James Dyer
 
+* 0.5.0 — <2026-04-05>
+
+Transient menu for discoverable command access.
+
+** Added
+
+- ~qvm-menu~ transient prefix command with 2×2 grouped layout: Lifecycle, Connect, Snapshots, Tools
+- ~?~ keybinding in list buffer to invoke the transient menu
+- Context-aware menu: shows list-buffer commands when in ~*qvm*~, standalone commands elsewhere
+- ~transient~ added to ~Package-Requires~
+
+** Changed
+
+- Removed minibuffer keybinding hint on ~qvm-list~ startup (replaced by transient menu)
+
 * 0.4.0 — <2026-04-04>
 
 Snapshots and VM cloning.

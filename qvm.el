@@ -1,9 +1,9 @@
 ;;; qvm.el --- Emacs interface to the qvm QEMU VM manager -*- lexical-binding: t; -*-
 
 ;; Author: James Dyer
-;; Version: 0.4.0
+;; Version: 0.5.0
 ;; Keywords: tools, qemu, vm
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (transient "0.4.0"))
 
 ;;; Commentary:
 
@@ -11,12 +11,14 @@
 ;;
 ;; Features:
 ;;   - VM list buffer (qvm-list) with keybindings for common operations
+;;   - Transient menu (?) for discoverable access to all commands
 ;;   - TRAMP integration: open shell or dired on a running VM
 ;;   - Start, stop, run (start+viewer), VNC and SPICE commands
 ;;   - Async command output shown in a dedicated buffer
 ;;
 ;; Usage:
 ;;   M-x qvm-list     — open the VM manager buffer
+;;   M-x qvm-menu     — open the transient menu (also ? in list buffer)
 ;;
 ;; Keybindings in the VM list buffer:
 ;;   RET / r  — run (start + viewer)
@@ -37,6 +39,7 @@
 ;;   i        — show VM info
 ;;   g        — refresh
 ;;   q        — quit
+;;   ?        — transient menu
 ;;
 ;; Add to your init.el:
 ;;   (use-package qvm
@@ -46,6 +49,7 @@
 ;;; Code:
 
 (require 'tabulated-list)
+(require 'transient)
 (require 'tramp)
 
 (defgroup qvm nil
@@ -478,6 +482,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "X")   #'qvm-list-snapshot-delete)
     (define-key map (kbd "g")   #'qvm-list-refresh)
     (define-key map (kbd "q")   #'quit-window)
+    (define-key map (kbd "?")   #'qvm-menu)
     map)
   "Keymap for `qvm-list-mode'.")
 
@@ -681,8 +686,48 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
       (setq tabulated-list-entries (qvm--list-entries))
       (tabulated-list-print)
       (qvm-list--goto-first-entry))
-    (pop-to-buffer buf)
-    (message "r=run  s=start  x=stop  c=create  C=clone  n=snapshot  N=snap-list  R=snap-restore  X=snap-del  v=vnc  V=spice  d=dired  e=eshell  i=info  g=refresh  q=quit")))
+    (pop-to-buffer buf)))
+
+;; ── Transient menu ───────────────────────────────────────────────────────────
+
+;;;###autoload (autoload 'qvm-menu "qvm" nil t)
+(transient-define-prefix qvm-menu ()
+  "QVM - QEMU Virtual Machine Manager."
+  [:if (lambda () (derived-mode-p 'qvm-list-mode))
+   ["Lifecycle"
+    ("s" "Start"              qvm-list-start)
+    ("r" "Run (start+viewer)" qvm-list-run)
+    ("x" "Stop"               qvm-list-stop)
+    ("c" "Create new VM"      qvm-list-create)
+    ("C" "Clone"              qvm-list-clone)]
+   ["Connect"
+    ("v" "VNC viewer"         qvm-list-vnc)
+    ("V" "SPICE viewer"       qvm-list-spice)
+    ("d" "Dired (TRAMP)"      qvm-list-dired)
+    ("e" "Eshell (TRAMP)"     qvm-list-eshell)]]
+  [:if (lambda () (derived-mode-p 'qvm-list-mode))
+   ["Snapshots"
+    ("n" "Create snapshot"    qvm-list-snapshot-create)
+    ("N" "List snapshots"     qvm-list-snapshot-list)
+    ("R" "Restore snapshot"   qvm-list-snapshot-restore)
+    ("X" "Delete snapshot"    qvm-list-snapshot-delete)]
+   ["Tools"
+    ("S" "Send files (rsync)" qvm-list-scp)
+    ("P" "Push SSH key"       qvm-list-ssh-copy-id)
+    ("D" "Toggle display"     qvm-list-display)
+    ("k" "Keyboard setup"     qvm-list-keyboard)
+    ("w" "Clipboard copy"     qvm-list-clip-copy)
+    ("y" "Clipboard paste"    qvm-list-clip-paste)
+    ("I" "Install xclip"      qvm-list-clip-install)
+    ("i" "VM info"            qvm-list-info)]]
+  [:if-not (lambda () (derived-mode-p 'qvm-list-mode))
+   :description "QVM"
+   ("l" "Open VM list"       qvm-list)
+   ("s" "Start VM"           qvm-start)
+   ("x" "Stop VM"            qvm-stop)
+   ("r" "Run VM"             qvm-run)
+   ("c" "Create new VM"      qvm-create)
+   ("i" "VM info"            qvm-info)])
 
 (provide 'qvm)
 

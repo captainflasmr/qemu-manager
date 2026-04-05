@@ -1,12 +1,13 @@
 #+title: qvm.el --- Emacs interface to the qvm QEMU VM manager
 #+author: James Dyer
-#+version: 0.4.0
+#+version: 0.5.0
 
 *qvm* is an Emacs interface to the ~qvm~ QEMU VM manager shell script. It provides a convenient way to manage, start, and interact with QEMU virtual machines directly from Emacs.
 
 * Features
 
 - *VM List Buffer*: A tabulated list (~qvm-list~) showing all your VMs with their status (running/stopped), memory, CPUs, disk usage, SSH port, and display type.
+- *Transient Menu*: Press ~?~ in the list buffer (or ~M-x qvm-menu~) for a discoverable menu of all commands, grouped into Lifecycle, Connect, Snapshots, and Tools.
 - *Async Operations*: VM operations (start, stop, etc.) run asynchronously, and their output is shown in a dedicated ~*qvm output*~ buffer.
 - *TRAMP Integration*: Quickly open /dired/ or an /eshell/ on a running VM via SSH (localhost tunneling).
 - *Display Support*: Launch VNC or SPICE viewers for any running VM. SPICE provides clipboard sharing, dynamic resolution, and better keyboard input handling.
@@ -22,7 +23,7 @@
 
 - *Emacs 28.1* or newer.
 - The external *qvm* shell script must be available in your ~PATH~.
-- Built-in Emacs libraries: ~tabulated-list~, ~tramp~.
+- Built-in Emacs libraries: ~tabulated-list~, ~tramp~, ~transient~ (bundled with Emacs 29+, or available from MELPA).
 - For VNC: ~vncviewer~
 - For SPICE: ~spicy~ (from ~spice-gtk~), and ~spice-vdagent~ inside the guest for clipboard sharing.
 - For clipboard over SSH: ~wl-clipboard~ on the host, and ~wl-clipboard~ or ~xclip~ inside the guest.
@@ -50,7 +51,7 @@ Download ~qvm.el~ to your load path and add the following to your ~init.el~:
 
 * Usage
 
-Run ~M-x qvm-list~ to open the VM manager buffer.
+Run ~M-x qvm-list~ to open the VM manager buffer, then press ~?~ to open the transient menu. You can also run ~M-x qvm-menu~ from anywhere — outside the list buffer it offers a minimal set of commands that prompt for a VM name.
 
 ** Keybindings in the VM List Buffer
 
@@ -78,6 +79,7 @@ Run ~M-x qvm-list~ to open the VM manager buffer.
 | ~i~         | Show VM info                                 |
 | ~g~         | Refresh VM list                              |
 | ~q~         | Quit window                                  |
+| ~?~         | Open transient menu                          |
 
 ** Snapshots
 
