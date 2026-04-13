@@ -1,7 +1,7 @@
 ;;; qemu-manager.el --- QEMU VM manager for Emacs -*- lexical-binding: t; -*-
 
 ;; Author: James Dyer
-;; Version: 1.0.0
+;; Version: 1.1.0
 ;; Keywords: tools, qemu, vm
 ;; Package-Requires: ((emacs "28.1") (transient "0.4.0"))
 
@@ -253,7 +253,7 @@ otherwise falls back to /ssh:user@localhost#port:path."
   (let ((disk (qemu-manager--vm-disk name)))
     (when (file-exists-p disk)
       (let ((output (shell-command-to-string
-                     (format "qemu-img snapshot -l %s 2>/dev/null"
+                     (format "qemu-img snapshot -l -U %s 2>/dev/null"
                              (shell-quote-argument disk)))))
         (let (tags)
           (dolist (line (split-string output "\n" t))
@@ -678,8 +678,9 @@ Runs in a terminal buffer since it may prompt for a password."
              (buf-name (format "*eshell: %s*" name)))
         (if (get-buffer buf-name)
             (pop-to-buffer buf-name)
-          (let ((eshell-buffer-name buf-name))
-            (eshell))))
+          (with-current-buffer (eshell t)
+            (rename-buffer buf-name)
+            (pop-to-buffer (current-buffer)))))
     (user-error "VM '%s' is not running" name)))
 
 ;;;###autoload
@@ -757,7 +758,7 @@ Otherwise, prompts for a file."
   "List snapshots for VM NAME."
   (interactive (list (completing-read "List snapshots for VM: " (qemu-manager--list-vms) nil t)))
   (qemu-manager--run-process "qemu-manager-snapshot" "qemu-img"
-                    (list "snapshot" "-l" (qemu-manager--vm-disk name))))
+                    (list "snapshot" "-l" "-U" (qemu-manager--vm-disk name))))
 
 ;;;###autoload
 (defun qemu-manager-snapshot-restore (name tag)
@@ -1188,8 +1189,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     ("v" "VNC viewer"         qemu-manager-list-vnc)
     ("V" "SPICE viewer"       qemu-manager-list-spice)
     ("d" "Dired (TRAMP)"      qemu-manager-list-dired)
-    ("e" "Eshell (TRAMP)"     qemu-manager-list-eshell)]]
-  [:if (lambda () (derived-mode-p 'qemu-manager-list-mode))
+    ("e" "Eshell (TRAMP)"     qemu-manager-list-eshell)]
    ["Snapshots"
     ("+" "Create snapshot"    qemu-manager-list-snapshot-create)
     ("N" "List snapshots"     qemu-manager-list-snapshot-list)

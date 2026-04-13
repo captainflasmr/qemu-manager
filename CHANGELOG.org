@@ -1,6 +1,17 @@
 #+title: Changelog
 #+author: James Dyer
 
+* 1.1.0 — <2026-04-13>
+
+** Fixed
+
+- ~qemu-manager-eshell~ no longer errors with "Defining as dynamic an already lexical var: eshell-buffer-name" on recent Emacs; the eshell buffer is now created via ~(eshell t)~ and renamed after the fact
+- ~qemu-manager-snapshot-list~ and ~qemu-manager--snapshot-tags~ pass ~-U~ to ~qemu-img snapshot -l~ so listing snapshots works while the VM is running and holds the qcow2 write lock
+
+** Changed
+
+- ~qemu-manager-menu~ transient now displays all four groups (Lifecycle, Connect, Snapshots, Tools) in a single row
+
 * 1.0.0 — <2026-04-05>
 
 Pure Elisp rewrite -- removed dependency on the =qemu-manager= bash script.
