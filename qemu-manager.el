@@ -1,4 +1,4 @@
-;;; qvm.el --- QEMU VM manager for Emacs -*- lexical-binding: t; -*-
+;;; qemu-manager.el --- QEMU VM manager for Emacs -*- lexical-binding: t; -*-
 
 ;; Author: James Dyer
 ;; Version: 1.0.0
@@ -12,15 +12,15 @@
 ;; directly -- no external wrapper script required.
 ;;
 ;; Features:
-;;   - VM list buffer (qvm-list) with keybindings for common operations
+;;   - VM list buffer (qemu-manager-list) with keybindings for common operations
 ;;   - Transient menu (?) for discoverable access to all commands
 ;;   - TRAMP integration: open shell or dired on a running VM
 ;;   - Start, stop, run (start+viewer), VNC and SPICE commands
 ;;   - Async command output shown in a dedicated buffer
 ;;
 ;; Usage:
-;;   M-x qvm-list     -- open the VM manager buffer
-;;   M-x qvm-menu     -- open the transient menu (also ? in list buffer)
+;;   M-x qemu-manager-list     -- open the VM manager buffer
+;;   M-x qemu-manager-menu     -- open the transient menu (also ? in list buffer)
 ;;
 ;; Keybindings in the VM list buffer:
 ;;   RET / r  -- run (start + viewer)
@@ -44,9 +44,9 @@
 ;;   ?        -- transient menu
 ;;
 ;; Add to your init.el:
-;;   (use-package qvm
-;;     :load-path "~/source/repos/qvm"
-;;     :bind ("C-c v" . qvm-list))
+;;   (use-package qemu-manager
+;;     :load-path "~/source/repos/qemu-manager"
+;;     :bind ("C-c v" . qemu-manager-list))
 
 ;;; Code:
 
@@ -56,113 +56,113 @@
 
 ;; ── Customization ────────────────────────────────────────────────────────────
 
-(defgroup qvm nil
+(defgroup qemu-manager nil
   "QEMU VM manager."
   :group 'tools
-  :prefix "qvm-")
+  :prefix "qemu-manager-")
 
-(defcustom qvm-base-dir (expand-file-name "~/VM")
+(defcustom qemu-manager-base-dir (expand-file-name "~/VM")
   "Directory where VMs are stored."
   :type 'directory
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-qemu-binary (or (executable-find "qemu-system-x86_64")
+(defcustom qemu-manager-qemu-binary (or (executable-find "qemu-system-x86_64")
                                 "qemu-system-x86_64")
   "Path to the QEMU system emulator."
   :type 'file
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-vnc-viewer (or (executable-find "vncviewer") "vncviewer")
+(defcustom qemu-manager-vnc-viewer (or (executable-find "vncviewer") "vncviewer")
   "Path to the VNC viewer program."
   :type 'file
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-vnc-viewer-args '("-RemoteResize=1")
+(defcustom qemu-manager-vnc-viewer-args '("-RemoteResize=1")
   "Extra arguments passed to the VNC viewer."
   :type '(repeat string)
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-spice-viewer (or (executable-find "spicy") "spicy")
+(defcustom qemu-manager-spice-viewer (or (executable-find "spicy") "spicy")
   "Path to the SPICE viewer program."
   :type 'file
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-memory "4G"
+(defcustom qemu-manager-default-memory "4G"
   "Default memory size for new VMs."
   :type 'string
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-cpus "4"
+(defcustom qemu-manager-default-cpus "4"
   "Default CPU count for new VMs."
   :type 'string
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-disk "40G"
+(defcustom qemu-manager-default-disk "40G"
   "Default disk size for new VMs."
   :type 'string
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-ssh-port 2222
+(defcustom qemu-manager-default-ssh-port 2222
   "Starting SSH port for auto-assignment."
   :type 'integer
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-vnc-display 1
+(defcustom qemu-manager-default-vnc-display 1
   "Starting VNC display number for auto-assignment."
   :type 'integer
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-spice-port 5930
+(defcustom qemu-manager-default-spice-port 5930
   "Starting SPICE port for auto-assignment."
   :type 'integer
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-display "vnc"
+(defcustom qemu-manager-default-display "vnc"
   "Default display type for new VMs."
   :type '(choice (const "vnc") (const "spice"))
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-default-user (user-login-name)
+(defcustom qemu-manager-default-user (user-login-name)
   "Default SSH username for new VMs."
   :type 'string
-  :group 'qvm)
+  :group 'qemu-manager)
 
-(defcustom qvm-output-buffer "*qvm output*"
+(defcustom qemu-manager-output-buffer "*qemu-manager output*"
   "Buffer name for command output."
   :type 'string
-  :group 'qvm)
+  :group 'qemu-manager)
 
 ;; ── Path helpers ─────────────────────────────────────────────────────────────
 
-(defun qvm--vm-dir (name)
+(defun qemu-manager--vm-dir (name)
   "Return the directory path for VM NAME."
-  (expand-file-name name qvm-base-dir))
+  (expand-file-name name qemu-manager-base-dir))
 
-(defun qvm--vm-conf (name)
+(defun qemu-manager--vm-conf (name)
   "Return the config file path for VM NAME."
-  (expand-file-name "vm.conf" (qvm--vm-dir name)))
+  (expand-file-name "vm.conf" (qemu-manager--vm-dir name)))
 
-(defun qvm--vm-disk (name)
+(defun qemu-manager--vm-disk (name)
   "Return the disk image path for VM NAME."
-  (expand-file-name "disk.qcow2" (qvm--vm-dir name)))
+  (expand-file-name "disk.qcow2" (qemu-manager--vm-dir name)))
 
-(defun qvm--vm-pid (name)
+(defun qemu-manager--vm-pid (name)
   "Return the PID file path for VM NAME."
-  (expand-file-name "qvm.pid" (qvm--vm-dir name)))
+  (expand-file-name "qemu-manager.pid" (qemu-manager--vm-dir name)))
 
 ;; ── Config parsing ───────────────────────────────────────────────────────────
 
-(defun qvm--list-vms ()
-  "Return a list of VM names found in `qvm-base-dir'."
-  (when (file-directory-p qvm-base-dir)
+(defun qemu-manager--list-vms ()
+  "Return a list of VM names found in `qemu-manager-base-dir'."
+  (when (file-directory-p qemu-manager-base-dir)
     (seq-filter
      (lambda (name)
-       (file-exists-p (qvm--vm-conf name)))
-     (directory-files qvm-base-dir nil "^[^.]"))))
+       (file-exists-p (qemu-manager--vm-conf name)))
+     (directory-files qemu-manager-base-dir nil "^[^.]"))))
 
-(defun qvm--read-conf (name)
+(defun qemu-manager--read-conf (name)
   "Read vm.conf for VM NAME and return an alist of key/value pairs."
-  (let ((conf-file (qvm--vm-conf name))
+  (let ((conf-file (qemu-manager--vm-conf name))
         result)
     (when (file-exists-p conf-file)
       (with-temp-buffer
@@ -172,21 +172,21 @@
           (push (cons (match-string 1) (match-string 2)) result))))
     result))
 
-(defun qvm--conf-get (conf key)
+(defun qemu-manager--conf-get (conf key)
   "Get KEY from parsed conf alist CONF."
   (cdr (assoc key conf)))
 
-(defun qvm--write-conf (name conf)
+(defun qemu-manager--write-conf (name conf)
   "Write CONF alist to vm.conf for VM NAME."
-  (with-temp-file (qvm--vm-conf name)
-    (insert (format "# qvm configuration for '%s'\n" name))
+  (with-temp-file (qemu-manager--vm-conf name)
+    (insert (format "# qemu-manager configuration for '%s'\n" name))
     (insert (format "# Generated %s\n" (format-time-string "%FT%T%z")))
     (dolist (pair conf)
       (insert (format "%s=\"%s\"\n" (car pair) (cdr pair))))))
 
-(defun qvm--update-conf-value (name key value)
+(defun qemu-manager--update-conf-value (name key value)
   "Update KEY to VALUE in vm.conf for VM NAME."
-  (let ((conf-file (qvm--vm-conf name)))
+  (let ((conf-file (qemu-manager--vm-conf name)))
     (with-temp-buffer
       (insert-file-contents conf-file)
       (goto-char (point-min))
@@ -199,13 +199,13 @@
 
 ;; ── State queries ────────────────────────────────────────────────────────────
 
-(defun qvm--pid-alive-p (pid)
+(defun qemu-manager--pid-alive-p (pid)
   "Return non-nil if process PID is alive."
   (= 0 (call-process "kill" nil nil nil "-0" (number-to-string pid))))
 
-(defun qvm--read-pid (name)
+(defun qemu-manager--read-pid (name)
   "Read and return the PID from VM NAME's pidfile, or nil."
-  (let ((pidfile (qvm--vm-pid name)))
+  (let ((pidfile (qemu-manager--vm-pid name)))
     (when (file-exists-p pidfile)
       (let ((pid (string-to-number
                   (string-trim (with-temp-buffer
@@ -213,44 +213,44 @@
                                  (buffer-string))))))
         (when (> pid 0) pid)))))
 
-(defun qvm--running-p (name)
+(defun qemu-manager--running-p (name)
   "Return non-nil if VM NAME is currently running."
-  (when-let ((pid (qvm--read-pid name)))
-    (qvm--pid-alive-p pid)))
+  (when-let ((pid (qemu-manager--read-pid name)))
+    (qemu-manager--pid-alive-p pid)))
 
-(defun qvm--disk-size (name)
+(defun qemu-manager--disk-size (name)
   "Return human-readable disk usage for VM NAME."
-  (let ((disk (qvm--vm-disk name)))
+  (let ((disk (qemu-manager--vm-disk name)))
     (if (file-exists-p disk)
         (string-trim
          (shell-command-to-string
           (format "du -sh %s 2>/dev/null | cut -f1" (shell-quote-argument disk))))
       "?")))
 
-(defun qvm--ssh-config-host-p (name)
-  "Return non-nil if SSH config has a Host entry for qvm-NAME."
+(defun qemu-manager--ssh-config-host-p (name)
+  "Return non-nil if SSH config has a Host entry for qemu-manager-NAME."
   (let ((ssh-config (expand-file-name "~/.ssh/config")))
     (when (file-exists-p ssh-config)
       (with-temp-buffer
         (insert-file-contents ssh-config)
         (goto-char (point-min))
-        (re-search-forward (format "^Host qvm-%s$" (regexp-quote name)) nil t)))))
+        (re-search-forward (format "^Host qemu-manager-%s$" (regexp-quote name)) nil t)))))
 
-(defun qvm--tramp-path (name &optional path)
+(defun qemu-manager--tramp-path (name &optional path)
   "Return a TRAMP path to VM NAME at remote PATH (default /home/user/).
-Uses the SSH config alias qvm-NAME if available (set up by `qvm-ssh-copy-id'),
+Uses the SSH config alias qemu-manager-NAME if available (set up by `qemu-manager-ssh-copy-id'),
 otherwise falls back to /ssh:user@localhost#port:path."
-  (let* ((conf (qvm--read-conf name))
-         (user (qvm--conf-get conf "VM_USER"))
-         (port (qvm--conf-get conf "VM_SSH_PORT"))
+  (let* ((conf (qemu-manager--read-conf name))
+         (user (qemu-manager--conf-get conf "VM_USER"))
+         (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
          (remote-path (or path (format "/home/%s/" user))))
-    (if (qvm--ssh-config-host-p name)
-        (format "/ssh:qvm-%s:%s" name remote-path)
+    (if (qemu-manager--ssh-config-host-p name)
+        (format "/ssh:qemu-manager-%s:%s" name remote-path)
       (format "/ssh:%s@localhost#%s:%s" user port remote-path))))
 
-(defun qvm--snapshot-tags (name)
+(defun qemu-manager--snapshot-tags (name)
   "Return a list of snapshot tag names for VM NAME."
-  (let ((disk (qvm--vm-disk name)))
+  (let ((disk (qemu-manager--vm-disk name)))
     (when (file-exists-p disk)
       (let ((output (shell-command-to-string
                      (format "qemu-img snapshot -l %s 2>/dev/null"
@@ -263,33 +263,33 @@ otherwise falls back to /ssh:user@localhost#port:path."
 
 ;; ── Port allocation ──────────────────────────────────────────────────────────
 
-(defun qvm--port-in-use-p (port)
+(defun qemu-manager--port-in-use-p (port)
   "Return non-nil if TCP PORT is in use."
   (with-temp-buffer
     (call-process "ss" nil t nil "-tlnH" (format "sport = :%d" port))
     (> (buffer-size) 0)))
 
-(defun qvm--next-free-port (start-port)
+(defun qemu-manager--next-free-port (start-port)
   "Find next free TCP port starting from START-PORT."
   (let ((port start-port))
-    (while (qvm--port-in-use-p port)
+    (while (qemu-manager--port-in-use-p port)
       (setq port (1+ port)))
     port))
 
-(defun qvm--next-free-vnc (start-display)
+(defun qemu-manager--next-free-vnc (start-display)
   "Find next free VNC display starting from START-DISPLAY.
 VNC display N maps to TCP port 5900+N."
   (let ((display start-display))
-    (while (qvm--port-in-use-p (+ 5900 display))
+    (while (qemu-manager--port-in-use-p (+ 5900 display))
       (setq display (1+ display)))
     display))
 
 ;; ── Process helpers ──────────────────────────────────────────────────────────
 
-(defun qvm--run-process (proc-name program args &optional on-finish)
-  "Run PROGRAM with ARGS asynchronously, showing output in `qvm-output-buffer'.
+(defun qemu-manager--run-process (proc-name program args &optional on-finish)
+  "Run PROGRAM with ARGS asynchronously, showing output in `qemu-manager-output-buffer'.
 PROC-NAME names the process.  ON-FINISH called on successful exit."
-  (let ((buf (get-buffer-create qvm-output-buffer)))
+  (let ((buf (get-buffer-create qemu-manager-output-buffer)))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
@@ -315,9 +315,9 @@ PROC-NAME names the process.  ON-FINISH called on successful exit."
                  (when (and on-finish (string-match-p "finished" event))
                    (funcall on-finish))))))
 
-(defun qvm--display-output (text)
-  "Display TEXT in the qvm output buffer."
-  (let ((buf (get-buffer-create qvm-output-buffer)))
+(defun qemu-manager--display-output (text)
+  "Display TEXT in the qemu-manager output buffer."
+  (let ((buf (get-buffer-create qemu-manager-output-buffer)))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
@@ -325,9 +325,9 @@ PROC-NAME names the process.  ON-FINISH called on successful exit."
       (setq buffer-read-only t))
     (display-buffer buf '(display-buffer-at-bottom . ((window-height . 10))))))
 
-(defun qvm--append-output (text)
-  "Append TEXT to the qvm output buffer."
-  (when-let ((buf (get-buffer qvm-output-buffer)))
+(defun qemu-manager--append-output (text)
+  "Append TEXT to the qemu-manager output buffer."
+  (when-let ((buf (get-buffer qemu-manager-output-buffer)))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (goto-char (point-max))
@@ -335,32 +335,32 @@ PROC-NAME names the process.  ON-FINISH called on successful exit."
 
 ;; ── QEMU helpers ─────────────────────────────────────────────────────────────
 
-(defun qvm--qemu-display-args (conf)
+(defun qemu-manager--qemu-display-args (conf)
   "Return QEMU display argument list based on CONF."
-  (let ((display (or (qvm--conf-get conf "VM_DISPLAY") "vnc")))
+  (let ((display (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc")))
     (if (string= display "spice")
-        (let ((port (or (qvm--conf-get conf "VM_SPICE_PORT")
-                        (number-to-string qvm-default-spice-port))))
+        (let ((port (or (qemu-manager--conf-get conf "VM_SPICE_PORT")
+                        (number-to-string qemu-manager-default-spice-port))))
           (list "-spice" (format "port=%s,disable-ticketing=on" port)
                 "-device" "virtio-serial-pci"
                 "-chardev" "spicevmc,id=vdagent,name=vdagent"
                 "-device" "virtserialport,chardev=vdagent,name=com.redhat.spice.0"
                 "-display" "none"
                 "-vga" "qxl"))
-      (let ((vnc-display (or (qvm--conf-get conf "VM_VNC_DISPLAY")
-                             (number-to-string qvm-default-vnc-display))))
+      (let ((vnc-display (or (qemu-manager--conf-get conf "VM_VNC_DISPLAY")
+                             (number-to-string qemu-manager-default-vnc-display))))
         (list "-vnc" (format ":%s" vnc-display)
               "-display" "none"
               "-vga" "virtio")))))
 
-(defun qvm--qemu-base-args (name conf &optional offline)
+(defun qemu-manager--qemu-base-args (name conf &optional offline)
   "Build base QEMU command args for VM NAME using CONF.
 If OFFLINE is non-nil, disable networking."
-  (let* ((disk (qvm--vm-disk name))
-         (memory (or (qvm--conf-get conf "VM_MEMORY") qvm-default-memory))
-         (cpus (or (qvm--conf-get conf "VM_CPUS") qvm-default-cpus))
-         (ssh-port (or (qvm--conf-get conf "VM_SSH_PORT")
-                       (number-to-string qvm-default-ssh-port))))
+  (let* ((disk (qemu-manager--vm-disk name))
+         (memory (or (qemu-manager--conf-get conf "VM_MEMORY") qemu-manager-default-memory))
+         (cpus (or (qemu-manager--conf-get conf "VM_CPUS") qemu-manager-default-cpus))
+         (ssh-port (or (qemu-manager--conf-get conf "VM_SSH_PORT")
+                       (number-to-string qemu-manager-default-ssh-port))))
     (append
      (list "-enable-kvm"
            "-m" memory
@@ -370,23 +370,23 @@ If OFFLINE is non-nil, disable networking."
      (if offline
          (list "-nic" "none")
        (list "-nic" (format "user,hostfwd=tcp::%s-:22" ssh-port)))
-     (qvm--qemu-display-args conf))))
+     (qemu-manager--qemu-display-args conf))))
 
-(defun qvm--start-qemu (name args &optional on-exit)
+(defun qemu-manager--start-qemu (name args &optional on-exit)
   "Launch QEMU for VM NAME with ARGS.
 ON-EXIT is called when the QEMU process terminates.
 Returns the process object."
-  (unless (executable-find qvm-qemu-binary)
-    (user-error "QEMU binary not found: %s" qvm-qemu-binary))
-  (let* ((pidfile (qvm--vm-pid name))
+  (unless (executable-find qemu-manager-qemu-binary)
+    (user-error "QEMU binary not found: %s" qemu-manager-qemu-binary))
+  (let* ((pidfile (qemu-manager--vm-pid name))
          (proc (make-process
                 :name (format "qemu-%s" name)
-                :command (cons qvm-qemu-binary args)
+                :command (cons qemu-manager-qemu-binary args)
                 :sentinel (lambda (_proc event)
                             (when (file-exists-p pidfile)
                               (delete-file pidfile))
-                            (when (get-buffer "*qvm*")
-                              (qvm-list-refresh))
+                            (when (get-buffer "*qemu-manager*")
+                              (qemu-manager-list-refresh))
                             (when (and on-exit
                                        (string-match-p "\\(?:finished\\|exited\\)" event))
                               (funcall on-exit))))))
@@ -397,20 +397,20 @@ Returns the process object."
 
 ;; ── SSH helpers ──────────────────────────────────────────────────────────────
 
-(defun qvm--ssh-args (name)
+(defun qemu-manager--ssh-args (name)
   "Return base SSH argument list for connecting to VM NAME."
-  (if (qvm--ssh-config-host-p name)
-      (list (format "qvm-%s" name))
-    (let* ((conf (qvm--read-conf name))
-           (user (qvm--conf-get conf "VM_USER"))
-           (port (qvm--conf-get conf "VM_SSH_PORT")))
+  (if (qemu-manager--ssh-config-host-p name)
+      (list (format "qemu-manager-%s" name))
+    (let* ((conf (qemu-manager--read-conf name))
+           (user (qemu-manager--conf-get conf "VM_USER"))
+           (port (qemu-manager--conf-get conf "VM_SSH_PORT")))
       (list "-p" port "-o" "StrictHostKeyChecking=accept-new"
             (format "%s@localhost" user)))))
 
-(defun qvm--add-ssh-config (name user port)
+(defun qemu-manager--add-ssh-config (name user port)
   "Add SSH config entry for VM NAME if not already present."
   (let* ((ssh-config (expand-file-name "~/.ssh/config"))
-         (host-alias (format "qvm-%s" name)))
+         (host-alias (format "qemu-manager-%s" name)))
     (unless (and (file-exists-p ssh-config)
                  (with-temp-buffer
                    (insert-file-contents ssh-config)
@@ -419,7 +419,7 @@ Returns the process object."
                     (format "^Host %s$" (regexp-quote host-alias)) nil t)))
       (make-directory (expand-file-name "~/.ssh") t)
       (with-temp-buffer
-        (insert (format "\n# qvm: %s\nHost %s\n    HostName localhost\n    Port %s\n    User %s\n    BatchMode yes\n    StrictHostKeyChecking accept-new\n    LogLevel ERROR\n"
+        (insert (format "\n# qemu-manager: %s\nHost %s\n    HostName localhost\n    Port %s\n    User %s\n    BatchMode yes\n    StrictHostKeyChecking accept-new\n    LogLevel ERROR\n"
                         name host-alias port user))
         (append-to-file (point-min) (point-max) ssh-config))
       (set-file-modes ssh-config #o600)
@@ -428,145 +428,145 @@ Returns the process object."
 ;; ── Commands ─────────────────────────────────────────────────────────────────
 
 ;;;###autoload
-(defun qvm-start (name)
+(defun qemu-manager-start (name)
   "Start VM NAME."
-  (interactive (list (completing-read "Start VM: " (qvm--list-vms) nil t)))
-  (when (qvm--running-p name)
+  (interactive (list (completing-read "Start VM: " (qemu-manager--list-vms) nil t)))
+  (when (qemu-manager--running-p name)
     (user-error "VM '%s' is already running" name))
-  (let* ((conf (qvm--read-conf name))
-         (args (qvm--qemu-base-args name conf)))
-    (qvm--start-qemu name args)
-    (qvm--display-output
+  (let* ((conf (qemu-manager--read-conf name))
+         (args (qemu-manager--qemu-base-args name conf)))
+    (qemu-manager--start-qemu name args)
+    (qemu-manager--display-output
      (format "Starting VM '%s'\n  Memory:  %s\n  CPUs:    %s\n  SSH:     localhost:%s\n  Display: %s\n"
              name
-             (or (qvm--conf-get conf "VM_MEMORY") "?")
-             (or (qvm--conf-get conf "VM_CPUS") "?")
-             (or (qvm--conf-get conf "VM_SSH_PORT") "?")
-             (or (qvm--conf-get conf "VM_DISPLAY") "vnc")))
-    (qvm-list-refresh)))
+             (or (qemu-manager--conf-get conf "VM_MEMORY") "?")
+             (or (qemu-manager--conf-get conf "VM_CPUS") "?")
+             (or (qemu-manager--conf-get conf "VM_SSH_PORT") "?")
+             (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc")))
+    (qemu-manager-list-refresh)))
 
 ;;;###autoload
-(defun qvm-stop (name)
+(defun qemu-manager-stop (name)
   "Stop VM NAME."
   (interactive (list (completing-read "Stop VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (let ((pid (qvm--read-pid name)))
+  (let ((pid (qemu-manager--read-pid name)))
     (unless pid
       (user-error "VM '%s' does not appear to be running" name))
-    (if (qvm--pid-alive-p pid)
+    (if (qemu-manager--pid-alive-p pid)
         (progn
-          (qvm--display-output (format "Stopping VM '%s' (PID %d)...\n" name pid))
+          (qemu-manager--display-output (format "Stopping VM '%s' (PID %d)...\n" name pid))
           (signal-process pid 15)
-          (qvm--wait-for-stop name pid 0))
-      (let ((pidfile (qvm--vm-pid name)))
+          (qemu-manager--wait-for-stop name pid 0))
+      (let ((pidfile (qemu-manager--vm-pid name)))
         (when (file-exists-p pidfile)
           (delete-file pidfile)))
       (message "Removed stale PID file for '%s'" name)
-      (qvm-list-refresh))))
+      (qemu-manager-list-refresh))))
 
-(defun qvm--wait-for-stop (name pid attempts)
+(defun qemu-manager--wait-for-stop (name pid attempts)
   "Poll for PID to die after stopping VM NAME.
 Force-kill after 10 ATTEMPTS."
   (cond
-   ((not (qvm--pid-alive-p pid))
-    (let ((pidfile (qvm--vm-pid name)))
+   ((not (qemu-manager--pid-alive-p pid))
+    (let ((pidfile (qemu-manager--vm-pid name)))
       (when (file-exists-p pidfile)
         (delete-file pidfile)))
-    (qvm--append-output "Stopped.\n")
-    (qvm-list-refresh))
+    (qemu-manager--append-output "Stopped.\n")
+    (qemu-manager-list-refresh))
    ((>= attempts 10)
     (signal-process pid 9)
-    (let ((pidfile (qvm--vm-pid name)))
+    (let ((pidfile (qemu-manager--vm-pid name)))
       (when (file-exists-p pidfile)
         (delete-file pidfile)))
-    (qvm--append-output "Force stopped.\n")
-    (qvm-list-refresh))
+    (qemu-manager--append-output "Force stopped.\n")
+    (qemu-manager-list-refresh))
    (t
-    (run-with-timer 1 nil #'qvm--wait-for-stop name pid (1+ attempts)))))
+    (run-with-timer 1 nil #'qemu-manager--wait-for-stop name pid (1+ attempts)))))
 
 ;;;###autoload
-(defun qvm-run (name)
+(defun qemu-manager-run (name)
   "Start VM NAME and open the display viewer."
-  (interactive (list (completing-read "Run VM: " (qvm--list-vms) nil t)))
-  (let* ((conf (qvm--read-conf name))
-         (display (or (qvm--conf-get conf "VM_DISPLAY") "vnc")))
-    (unless (qvm--running-p name)
-      (qvm-start name))
+  (interactive (list (completing-read "Run VM: " (qemu-manager--list-vms) nil t)))
+  (let* ((conf (qemu-manager--read-conf name))
+         (display (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc")))
+    (unless (qemu-manager--running-p name)
+      (qemu-manager-start name))
     (run-with-timer 1 nil
                     (lambda ()
                       (if (string= display "spice")
-                          (qvm-spice name)
-                        (qvm-vnc name))))))
+                          (qemu-manager-spice name)
+                        (qemu-manager-vnc name))))))
 
 ;;;###autoload
-(defun qvm-vnc (name)
+(defun qemu-manager-vnc (name)
   "Open VNC viewer for VM NAME."
   (interactive (list (completing-read "VNC to VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let* ((conf (qvm--read-conf name))
-         (vnc-display (qvm--conf-get conf "VM_VNC_DISPLAY"))
+  (let* ((conf (qemu-manager--read-conf name))
+         (vnc-display (qemu-manager--conf-get conf "VM_VNC_DISPLAY"))
          (vnc-port (+ 5900 (string-to-number (or vnc-display "1")))))
-    (qvm--run-process "qvm-vnc" qvm-vnc-viewer
+    (qemu-manager--run-process "qemu-manager-vnc" qemu-manager-vnc-viewer
                       (append (list (format "localhost:%d" vnc-port))
-                              qvm-vnc-viewer-args))))
+                              qemu-manager-vnc-viewer-args))))
 
 ;;;###autoload
-(defun qvm-spice (name)
+(defun qemu-manager-spice (name)
   "Open SPICE viewer for VM NAME."
   (interactive (list (completing-read "SPICE to VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let* ((conf (qvm--read-conf name))
-         (spice-port (or (qvm--conf-get conf "VM_SPICE_PORT")
-                         (number-to-string qvm-default-spice-port))))
-    (qvm--run-process "qvm-spice" qvm-spice-viewer
+  (let* ((conf (qemu-manager--read-conf name))
+         (spice-port (or (qemu-manager--conf-get conf "VM_SPICE_PORT")
+                         (number-to-string qemu-manager-default-spice-port))))
+    (qemu-manager--run-process "qemu-manager-spice" qemu-manager-spice-viewer
                       (list "-h" "localhost" "-p" spice-port))))
 
 ;;;###autoload
-(defun qvm-display (name)
+(defun qemu-manager-display (name)
   "Toggle display type between vnc and spice for VM NAME."
-  (interactive (list (completing-read "Toggle display for VM: " (qvm--list-vms) nil t)))
-  (when (qvm--running-p name)
+  (interactive (list (completing-read "Toggle display for VM: " (qemu-manager--list-vms) nil t)))
+  (when (qemu-manager--running-p name)
     (user-error "VM '%s' is running -- stop it first to switch display" name))
-  (let* ((conf (qvm--read-conf name))
-         (current (or (qvm--conf-get conf "VM_DISPLAY") "vnc"))
+  (let* ((conf (qemu-manager--read-conf name))
+         (current (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc"))
          (new (if (string= current "vnc") "spice" "vnc")))
-    (qvm--update-conf-value name "VM_DISPLAY" new)
+    (qemu-manager--update-conf-value name "VM_DISPLAY" new)
     (message "Switched '%s' to %s (takes effect on next start)" name new)
-    (qvm-list-refresh)))
+    (qemu-manager-list-refresh)))
 
 ;;;###autoload
-(defun qvm-keyboard (name)
+(defun qemu-manager-keyboard (name)
   "Setup keyboard remaps and sticky keys on VM NAME via SSH."
   (interactive (list (completing-read "Keyboard setup for VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let ((ssh-args (qvm--ssh-args name))
+  (let ((ssh-args (qemu-manager--ssh-args name))
         (remote-cmd (string-join
                      '("gsettings set org.gnome.desktop.input-sources sources \"[('xkb', 'gb')]\""
                        "gsettings set org.gnome.desktop.input-sources xkb-options \"['ctrl:nocaps','ctrl:ralt_rctrl']\""
                        "gsettings set org.gnome.desktop.a11y.keyboard stickykeys-enable true")
                      " && ")))
-    (qvm--run-process "qvm-keyboard" "ssh"
+    (qemu-manager--run-process "qemu-manager-keyboard" "ssh"
                       (append ssh-args (list remote-cmd)))))
 
 ;;;###autoload
-(defun qvm-clip-copy (name)
+(defun qemu-manager-clip-copy (name)
   "Copy VM NAME clipboard to host clipboard (kill ring)."
   (interactive (list (completing-read "Copy clipboard from VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let* ((ssh-args (qvm--ssh-args name))
+  (let* ((ssh-args (qemu-manager--ssh-args name))
          (remote-cmd (concat
                       "if command -v wl-paste >/dev/null 2>&1; then wl-paste;"
                       " elif command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -o;"
@@ -585,14 +585,14 @@ Force-kill after 10 ATTEMPTS."
     (message "Copied VM clipboard -> host (%d chars)" (length content))))
 
 ;;;###autoload
-(defun qvm-clip-paste (name)
+(defun qemu-manager-clip-paste (name)
   "Paste host clipboard to VM NAME clipboard."
   (interactive (list (completing-read "Paste clipboard to VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let* ((ssh-args (qvm--ssh-args name))
+  (let* ((ssh-args (qemu-manager--ssh-args name))
          (content (with-temp-buffer
                     (call-process "wl-paste" nil t nil)
                     (buffer-string)))
@@ -608,18 +608,18 @@ Force-kill after 10 ATTEMPTS."
     (message "Pasted host clipboard -> VM (%d chars)" (length content))))
 
 ;;;###autoload
-(defun qvm-ssh-copy-id (name)
+(defun qemu-manager-ssh-copy-id (name)
   "Copy SSH public key to VM NAME for passwordless access.
 Runs in a terminal buffer since it may prompt for a password."
   (interactive (list (completing-read "Push SSH key to VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let* ((conf (qvm--read-conf name))
-         (user (qvm--conf-get conf "VM_USER"))
-         (port (qvm--conf-get conf "VM_SSH_PORT"))
-         (buf-name (format "*qvm ssh-copy-id: %s*" name)))
+  (let* ((conf (qemu-manager--read-conf name))
+         (user (qemu-manager--conf-get conf "VM_USER"))
+         (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
+         (buf-name (format "*qemu-manager ssh-copy-id: %s*" name)))
     (when (get-buffer buf-name)
       (kill-buffer buf-name))
     (let* ((buf (make-term buf-name "ssh-copy-id" nil
@@ -633,14 +633,14 @@ Runs in a terminal buffer since it may prompt for a password."
          proc
          (lambda (_proc event)
            (when (string-match-p "finished" event)
-             (qvm--ssh-post-copy-id name)))))
+             (qemu-manager--ssh-post-copy-id name)))))
       (pop-to-buffer buf))))
 
-(defun qvm--ssh-post-copy-id (name)
+(defun qemu-manager--ssh-post-copy-id (name)
   "Fix permissions and add SSH config after ssh-copy-id for VM NAME."
-  (let* ((conf (qvm--read-conf name))
-         (user (qvm--conf-get conf "VM_USER"))
-         (port (qvm--conf-get conf "VM_SSH_PORT")))
+  (let* ((conf (qemu-manager--read-conf name))
+         (user (qemu-manager--conf-get conf "VM_USER"))
+         (port (qemu-manager--conf-get conf "VM_SSH_PORT")))
     (call-process "ssh" nil nil nil
                   "-p" port
                   "-o" "StrictHostKeyChecking=accept-new"
@@ -653,28 +653,28 @@ Runs in a terminal buffer since it may prompt for a password."
                             (format "%s@localhost" user)
                             "true"))
         (progn
-          (qvm--add-ssh-config name user port)
+          (qemu-manager--add-ssh-config name user port)
           (message "SSH key auth verified for '%s'" name))
       (message "Key auth verification failed for '%s'" name))))
 
 ;;;###autoload
-(defun qvm-dired (name)
+(defun qemu-manager-dired (name)
   "Open dired on VM NAME via TRAMP."
   (interactive (list (completing-read "Dired into VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (if (qvm--running-p name)
-      (dired (qvm--tramp-path name))
+  (if (qemu-manager--running-p name)
+      (dired (qemu-manager--tramp-path name))
     (user-error "VM '%s' is not running" name)))
 
 ;;;###autoload
-(defun qvm-eshell (name)
+(defun qemu-manager-eshell (name)
   "Open an eshell on VM NAME via TRAMP."
   (interactive (list (completing-read "Shell into VM: "
-                                      (seq-filter #'qvm--running-p (qvm--list-vms))
+                                      (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (if (qvm--running-p name)
-      (let* ((default-directory (qvm--tramp-path name))
+  (if (qemu-manager--running-p name)
+      (let* ((default-directory (qemu-manager--tramp-path name))
              (buf-name (format "*eshell: %s*" name)))
         (if (get-buffer buf-name)
             (pop-to-buffer buf-name)
@@ -683,38 +683,38 @@ Runs in a terminal buffer since it may prompt for a password."
     (user-error "VM '%s' is not running" name)))
 
 ;;;###autoload
-(defun qvm-scp (name files remote-dir)
+(defun qemu-manager-scp (name files remote-dir)
   "Copy FILES to VM NAME at REMOTE-DIR via rsync over SSH.
 When called from a dired buffer, uses the marked files or the file at point.
 Otherwise, prompts for a file."
   (interactive
    (let* ((vm (completing-read "SCP to VM: "
-                               (seq-filter #'qvm--running-p (qvm--list-vms))
+                               (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                nil t))
           (files (if (derived-mode-p 'dired-mode)
                      (dired-get-marked-files nil nil nil nil t)
                    (list (read-file-name "File to send: " nil nil t))))
-          (conf (qvm--read-conf vm))
-          (user (qvm--conf-get conf "VM_USER"))
+          (conf (qemu-manager--read-conf vm))
+          (user (qemu-manager--conf-get conf "VM_USER"))
           (remote-dir (read-string "Remote directory: "
                                    (format "/home/%s/" user))))
      (list vm files remote-dir)))
-  (unless (qvm--running-p name)
+  (unless (qemu-manager--running-p name)
     (user-error "VM '%s' is not running" name))
-  (let* ((conf (qvm--read-conf name))
-         (user (qvm--conf-get conf "VM_USER"))
-         (port (qvm--conf-get conf "VM_SSH_PORT"))
-         (ssh-cmd (if (qvm--ssh-config-host-p name)
+  (let* ((conf (qemu-manager--read-conf name))
+         (user (qemu-manager--conf-get conf "VM_USER"))
+         (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
+         (ssh-cmd (if (qemu-manager--ssh-config-host-p name)
                       "ssh"
                     (format "ssh -p %s" port)))
-         (dest-host (if (qvm--ssh-config-host-p name)
-                        (format "qvm-%s" name)
+         (dest-host (if (qemu-manager--ssh-config-host-p name)
+                        (format "qemu-manager-%s" name)
                       (format "%s@localhost" user)))
          (dest (format "%s:%s" dest-host remote-dir))
          (expanded (mapcar #'expand-file-name files))
          (args (append (list "-avz" "--progress" "-e" ssh-cmd)
                        expanded (list dest)))
-         (buf (get-buffer-create qvm-output-buffer)))
+         (buf (get-buffer-create qemu-manager-output-buffer)))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
@@ -725,7 +725,7 @@ Otherwise, prompts for a file."
       (setq buffer-read-only t))
     (display-buffer buf '(display-buffer-at-bottom . ((window-height . 10))))
     (make-process
-     :name "qvm-scp"
+     :name "qemu-manager-scp"
      :buffer buf
      :command (cons "rsync" args)
      :filter (lambda (proc str)
@@ -740,121 +740,121 @@ Otherwise, prompts for a file."
                      (insert (format "\n[%s]" (string-trim event)))))))))
 
 ;;;###autoload
-(defun qvm-snapshot-create (name tag)
+(defun qemu-manager-snapshot-create (name tag)
   "Create a snapshot TAG for stopped VM NAME."
   (interactive
-   (let* ((vms (seq-remove #'qvm--running-p (qvm--list-vms)))
+   (let* ((vms (seq-remove #'qemu-manager--running-p (qemu-manager--list-vms)))
           (name (completing-read "Snapshot VM: " vms nil t))
           (tag (read-string "Snapshot tag: ")))
      (list name tag)))
-  (when (qvm--running-p name)
+  (when (qemu-manager--running-p name)
     (user-error "VM '%s' is running -- stop it first" name))
-  (qvm--run-process "qvm-snapshot" "qemu-img"
-                    (list "snapshot" "-c" tag (qvm--vm-disk name))))
+  (qemu-manager--run-process "qemu-manager-snapshot" "qemu-img"
+                    (list "snapshot" "-c" tag (qemu-manager--vm-disk name))))
 
 ;;;###autoload
-(defun qvm-snapshot-list (name)
+(defun qemu-manager-snapshot-list (name)
   "List snapshots for VM NAME."
-  (interactive (list (completing-read "List snapshots for VM: " (qvm--list-vms) nil t)))
-  (qvm--run-process "qvm-snapshot" "qemu-img"
-                    (list "snapshot" "-l" (qvm--vm-disk name))))
+  (interactive (list (completing-read "List snapshots for VM: " (qemu-manager--list-vms) nil t)))
+  (qemu-manager--run-process "qemu-manager-snapshot" "qemu-img"
+                    (list "snapshot" "-l" (qemu-manager--vm-disk name))))
 
 ;;;###autoload
-(defun qvm-snapshot-restore (name tag)
+(defun qemu-manager-snapshot-restore (name tag)
   "Restore snapshot TAG for stopped VM NAME."
   (interactive
-   (let* ((vms (seq-remove #'qvm--running-p (qvm--list-vms)))
+   (let* ((vms (seq-remove #'qemu-manager--running-p (qemu-manager--list-vms)))
           (name (completing-read "Restore snapshot for VM: " vms nil t))
-          (tags (qvm--snapshot-tags name))
+          (tags (qemu-manager--snapshot-tags name))
           (tag (completing-read "Snapshot to restore: " tags nil t)))
      (list name tag)))
-  (when (qvm--running-p name)
+  (when (qemu-manager--running-p name)
     (user-error "VM '%s' is running -- stop it first" name))
   (when (yes-or-no-p (format "Restore snapshot '%s' for VM '%s'? " tag name))
-    (qvm--run-process "qvm-snapshot" "qemu-img"
-                      (list "snapshot" "-a" tag (qvm--vm-disk name)))))
+    (qemu-manager--run-process "qemu-manager-snapshot" "qemu-img"
+                      (list "snapshot" "-a" tag (qemu-manager--vm-disk name)))))
 
 ;;;###autoload
-(defun qvm-snapshot-delete (name tag)
+(defun qemu-manager-snapshot-delete (name tag)
   "Delete snapshot TAG from stopped VM NAME."
   (interactive
-   (let* ((vms (seq-remove #'qvm--running-p (qvm--list-vms)))
+   (let* ((vms (seq-remove #'qemu-manager--running-p (qemu-manager--list-vms)))
           (name (completing-read "Delete snapshot from VM: " vms nil t))
-          (tags (qvm--snapshot-tags name))
+          (tags (qemu-manager--snapshot-tags name))
           (tag (completing-read "Snapshot to delete: " tags nil t)))
      (list name tag)))
-  (when (qvm--running-p name)
+  (when (qemu-manager--running-p name)
     (user-error "VM '%s' is running -- stop it first" name))
   (when (yes-or-no-p (format "Delete snapshot '%s' from VM '%s'? " tag name))
-    (qvm--run-process "qvm-snapshot" "qemu-img"
-                      (list "snapshot" "-d" tag (qvm--vm-disk name)))))
+    (qemu-manager--run-process "qemu-manager-snapshot" "qemu-img"
+                      (list "snapshot" "-d" tag (qemu-manager--vm-disk name)))))
 
 ;;;###autoload
-(defun qvm-clone (name new-name linked)
+(defun qemu-manager-clone (name new-name linked)
   "Clone VM NAME to NEW-NAME.
 With prefix argument or LINKED non-nil, create a linked (COW) clone."
   (interactive
-   (let* ((name (completing-read "Clone VM: " (qvm--list-vms) nil t))
+   (let* ((name (completing-read "Clone VM: " (qemu-manager--list-vms) nil t))
           (new-name (read-string "New VM name: "))
           (linked (yes-or-no-p "Create linked (COW) clone? ")))
      (list name new-name linked)))
-  (when (qvm--running-p name)
+  (when (qemu-manager--running-p name)
     (user-error "VM '%s' is running -- stop it first" name))
   (when (string-empty-p new-name)
     (user-error "New VM name cannot be empty"))
-  (when (file-exists-p (qvm--vm-conf new-name))
+  (when (file-exists-p (qemu-manager--vm-conf new-name))
     (user-error "VM '%s' already exists" new-name))
-  (let* ((conf (qvm--read-conf name))
-         (ssh-port (qvm--next-free-port qvm-default-ssh-port))
-         (vnc-display (qvm--next-free-vnc qvm-default-vnc-display))
-         (spice-port (qvm--next-free-port qvm-default-spice-port))
-         (new-conf (list (cons "VM_MEMORY" (or (qvm--conf-get conf "VM_MEMORY") qvm-default-memory))
-                         (cons "VM_CPUS" (or (qvm--conf-get conf "VM_CPUS") qvm-default-cpus))
-                         (cons "VM_DISK_SIZE" (or (qvm--conf-get conf "VM_DISK_SIZE") qvm-default-disk))
+  (let* ((conf (qemu-manager--read-conf name))
+         (ssh-port (qemu-manager--next-free-port qemu-manager-default-ssh-port))
+         (vnc-display (qemu-manager--next-free-vnc qemu-manager-default-vnc-display))
+         (spice-port (qemu-manager--next-free-port qemu-manager-default-spice-port))
+         (new-conf (list (cons "VM_MEMORY" (or (qemu-manager--conf-get conf "VM_MEMORY") qemu-manager-default-memory))
+                         (cons "VM_CPUS" (or (qemu-manager--conf-get conf "VM_CPUS") qemu-manager-default-cpus))
+                         (cons "VM_DISK_SIZE" (or (qemu-manager--conf-get conf "VM_DISK_SIZE") qemu-manager-default-disk))
                          (cons "VM_SSH_PORT" (number-to-string ssh-port))
                          (cons "VM_VNC_DISPLAY" (number-to-string vnc-display))
                          (cons "VM_SPICE_PORT" (number-to-string spice-port))
-                         (cons "VM_DISPLAY" (or (qvm--conf-get conf "VM_DISPLAY") qvm-default-display))
-                         (cons "VM_USER" (or (qvm--conf-get conf "VM_USER") qvm-default-user)))))
-    (make-directory (qvm--vm-dir new-name) t)
+                         (cons "VM_DISPLAY" (or (qemu-manager--conf-get conf "VM_DISPLAY") qemu-manager-default-display))
+                         (cons "VM_USER" (or (qemu-manager--conf-get conf "VM_USER") qemu-manager-default-user)))))
+    (make-directory (qemu-manager--vm-dir new-name) t)
     (if linked
-        (let ((src-disk (file-truename (qvm--vm-disk name))))
-          (qvm--run-process
-           "qvm-clone" "qemu-img"
+        (let ((src-disk (file-truename (qemu-manager--vm-disk name))))
+          (qemu-manager--run-process
+           "qemu-manager-clone" "qemu-img"
            (list "create" "-f" "qcow2" "-b" src-disk "-F" "qcow2"
-                 (qvm--vm-disk new-name))
+                 (qemu-manager--vm-disk new-name))
            (lambda ()
-             (qvm--write-conf new-name new-conf)
-             (qvm-list-refresh))))
-      (qvm--run-process
-       "qvm-clone" "cp"
-       (list (qvm--vm-disk name) (qvm--vm-disk new-name))
+             (qemu-manager--write-conf new-name new-conf)
+             (qemu-manager-list-refresh))))
+      (qemu-manager--run-process
+       "qemu-manager-clone" "cp"
+       (list (qemu-manager--vm-disk name) (qemu-manager--vm-disk new-name))
        (lambda ()
-         (qvm--write-conf new-name new-conf)
-         (qvm-list-refresh))))))
+         (qemu-manager--write-conf new-name new-conf)
+         (qemu-manager-list-refresh))))))
 
 ;;;###autoload
-(defun qvm-info (name)
+(defun qemu-manager-info (name)
   "Show info for VM NAME."
-  (interactive (list (completing-read "VM info: " (qvm--list-vms) nil t)))
-  (let* ((conf (qvm--read-conf name))
-         (running (qvm--running-p name))
-         (memory (or (qvm--conf-get conf "VM_MEMORY") "?"))
-         (cpus (or (qvm--conf-get conf "VM_CPUS") "?"))
-         (disk-max (or (qvm--conf-get conf "VM_DISK_SIZE") "?"))
-         (disk-used (qvm--disk-size name))
-         (display (or (qvm--conf-get conf "VM_DISPLAY") "vnc"))
-         (ssh-port (or (qvm--conf-get conf "VM_SSH_PORT") "?"))
-         (user (or (qvm--conf-get conf "VM_USER") "?"))
-         (vnc-display (qvm--conf-get conf "VM_VNC_DISPLAY"))
-         (spice-port (qvm--conf-get conf "VM_SPICE_PORT")))
-    (qvm--display-output
+  (interactive (list (completing-read "VM info: " (qemu-manager--list-vms) nil t)))
+  (let* ((conf (qemu-manager--read-conf name))
+         (running (qemu-manager--running-p name))
+         (memory (or (qemu-manager--conf-get conf "VM_MEMORY") "?"))
+         (cpus (or (qemu-manager--conf-get conf "VM_CPUS") "?"))
+         (disk-max (or (qemu-manager--conf-get conf "VM_DISK_SIZE") "?"))
+         (disk-used (qemu-manager--disk-size name))
+         (display (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc"))
+         (ssh-port (or (qemu-manager--conf-get conf "VM_SSH_PORT") "?"))
+         (user (or (qemu-manager--conf-get conf "VM_USER") "?"))
+         (vnc-display (qemu-manager--conf-get conf "VM_VNC_DISPLAY"))
+         (spice-port (qemu-manager--conf-get conf "VM_SPICE_PORT")))
+    (qemu-manager--display-output
      (concat
       (format "%s\n" name)
       (format "  Status:    %s\n" (if running "running" "stopped"))
-      (format "  Directory: %s\n" (qvm--vm-dir name))
+      (format "  Directory: %s\n" (qemu-manager--vm-dir name))
       (format "  Disk:      %s (%s used / %s max)\n"
-              (qvm--vm-disk name) disk-used disk-max)
+              (qemu-manager--vm-disk name) disk-used disk-max)
       (format "  Memory:    %s\n" memory)
       (format "  CPUs:      %s\n" cpus)
       (format "  Display:   %s\n" display)
@@ -866,10 +866,10 @@ With prefix argument or LINKED non-nil, create a linked (COW) clone."
                 (+ 5900 (string-to-number (or vnc-display "0")))))
       (format "  User:      %s\n" user)
       "\n"
-      (format "  TRAMP:     %s\n" (qvm--tramp-path name))))))
+      (format "  TRAMP:     %s\n" (qemu-manager--tramp-path name))))))
 
 ;;;###autoload
-(defun qvm-create (name iso disk memory cpus)
+(defun qemu-manager-create (name iso disk memory cpus)
   "Create a new VM NAME, then boot ISO to install the OS.
 ISO is taken from the file at point in a dired buffer, or prompted
 via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
@@ -883,46 +883,46 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
                                    (or (file-directory-p f)
                                        (string-match-p "\\.iso\\'" f))))))
           (name   (read-string "VM name: "))
-          (disk   (read-string "Disk size: " qvm-default-disk))
-          (memory (read-string "Memory: " qvm-default-memory))
-          (cpus   (read-string "CPUs: " qvm-default-cpus)))
+          (disk   (read-string "Disk size: " qemu-manager-default-disk))
+          (memory (read-string "Memory: " qemu-manager-default-memory))
+          (cpus   (read-string "CPUs: " qemu-manager-default-cpus)))
      (list name iso disk memory cpus)))
-  (when (file-exists-p (qvm--vm-conf name))
+  (when (file-exists-p (qemu-manager--vm-conf name))
     (user-error "VM '%s' already exists" name))
-  (let* ((ssh-port (qvm--next-free-port qvm-default-ssh-port))
-         (vnc-display (qvm--next-free-vnc qvm-default-vnc-display))
-         (spice-port (qvm--next-free-port qvm-default-spice-port))
+  (let* ((ssh-port (qemu-manager--next-free-port qemu-manager-default-ssh-port))
+         (vnc-display (qemu-manager--next-free-vnc qemu-manager-default-vnc-display))
+         (spice-port (qemu-manager--next-free-port qemu-manager-default-spice-port))
          (conf (list (cons "VM_MEMORY" memory)
                      (cons "VM_CPUS" cpus)
                      (cons "VM_DISK_SIZE" disk)
                      (cons "VM_SSH_PORT" (number-to-string ssh-port))
                      (cons "VM_VNC_DISPLAY" (number-to-string vnc-display))
                      (cons "VM_SPICE_PORT" (number-to-string spice-port))
-                     (cons "VM_DISPLAY" qvm-default-display)
-                     (cons "VM_USER" qvm-default-user)))
+                     (cons "VM_DISPLAY" qemu-manager-default-display)
+                     (cons "VM_USER" qemu-manager-default-user)))
          (expanded-iso (expand-file-name iso)))
-    (make-directory (qvm--vm-dir name) t)
-    (qvm--run-process
-     "qvm-create" "qemu-img"
-     (list "create" "-f" "qcow2" (qvm--vm-disk name) disk)
+    (make-directory (qemu-manager--vm-dir name) t)
+    (qemu-manager--run-process
+     "qemu-manager-create" "qemu-img"
+     (list "create" "-f" "qcow2" (qemu-manager--vm-disk name) disk)
      (lambda ()
-       (qvm--write-conf name conf)
-       (let ((args (append (qvm--qemu-base-args name conf)
+       (qemu-manager--write-conf name conf)
+       (let ((args (append (qemu-manager--qemu-base-args name conf)
                            (list "-cdrom" expanded-iso "-boot" "d"))))
-         (qvm--start-qemu name args (lambda () (qvm-list-refresh)))
-         (qvm--append-output
+         (qemu-manager--start-qemu name args (lambda () (qemu-manager-list-refresh)))
+         (qemu-manager--append-output
           (format "\nInstalling from %s...\nQEMU running. After installation, stop the VM.\n"
                   (file-name-nondirectory expanded-iso)))
-         (qvm-list-refresh))))))
+         (qemu-manager-list-refresh))))))
 
 ;; ── Clip install (needs terminal for sudo) ───────────────────────────────────
 
-(defun qvm--clip-install (name)
+(defun qemu-manager--clip-install (name)
   "Install clipboard tools on VM NAME in a terminal buffer."
-  (let* ((conf (qvm--read-conf name))
-         (user (qvm--conf-get conf "VM_USER"))
-         (port (qvm--conf-get conf "VM_SSH_PORT"))
-         (buf-name (format "*qvm clip install: %s*" name))
+  (let* ((conf (qemu-manager--read-conf name))
+         (user (qemu-manager--conf-get conf "VM_USER"))
+         (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
+         (buf-name (format "*qemu-manager clip install: %s*" name))
          (remote-cmd (concat
                       "sudo pkill -9 PackageKit 2>/dev/null; sleep 1; "
                       "if command -v zypper >/dev/null 2>&1; then sudo zypper install -y wl-clipboard xclip; "
@@ -943,40 +943,40 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
 
 ;; ── List buffer ──────────────────────────────────────────────────────────────
 
-(defvar qvm-list-mode-map
+(defvar qemu-manager-list-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") #'qvm-list-run)
-    (define-key map (kbd "r")   #'qvm-list-run)
-    (define-key map (kbd "s")   #'qvm-list-start)
-    (define-key map (kbd "x")   #'qvm-list-stop)
-    (define-key map (kbd "c")   #'qvm-list-create)
-    (define-key map (kbd "v")   #'qvm-list-vnc)
-    (define-key map (kbd "V")   #'qvm-list-spice)
-    (define-key map (kbd "d")   #'qvm-list-dired)
-    (define-key map (kbd "e")   #'qvm-list-eshell)
-    (define-key map (kbd "i")   #'qvm-list-info)
-    (define-key map (kbd "D")   #'qvm-list-display)
-    (define-key map (kbd "k")   #'qvm-list-keyboard)
-    (define-key map (kbd "w")   #'qvm-list-clip-copy)
-    (define-key map (kbd "y")   #'qvm-list-clip-paste)
-    (define-key map (kbd "I")   #'qvm-list-clip-install)
-    (define-key map (kbd "S")   #'qvm-list-scp)
-    (define-key map (kbd "P")   #'qvm-list-ssh-copy-id)
-    (define-key map (kbd "C")   #'qvm-list-clone)
+    (define-key map (kbd "RET") #'qemu-manager-list-run)
+    (define-key map (kbd "r")   #'qemu-manager-list-run)
+    (define-key map (kbd "s")   #'qemu-manager-list-start)
+    (define-key map (kbd "x")   #'qemu-manager-list-stop)
+    (define-key map (kbd "c")   #'qemu-manager-list-create)
+    (define-key map (kbd "v")   #'qemu-manager-list-vnc)
+    (define-key map (kbd "V")   #'qemu-manager-list-spice)
+    (define-key map (kbd "d")   #'qemu-manager-list-dired)
+    (define-key map (kbd "e")   #'qemu-manager-list-eshell)
+    (define-key map (kbd "i")   #'qemu-manager-list-info)
+    (define-key map (kbd "D")   #'qemu-manager-list-display)
+    (define-key map (kbd "k")   #'qemu-manager-list-keyboard)
+    (define-key map (kbd "w")   #'qemu-manager-list-clip-copy)
+    (define-key map (kbd "y")   #'qemu-manager-list-clip-paste)
+    (define-key map (kbd "I")   #'qemu-manager-list-clip-install)
+    (define-key map (kbd "S")   #'qemu-manager-list-scp)
+    (define-key map (kbd "P")   #'qemu-manager-list-ssh-copy-id)
+    (define-key map (kbd "C")   #'qemu-manager-list-clone)
     (define-key map (kbd "n")   #'next-line)
     (define-key map (kbd "p")   #'previous-line)
-    (define-key map (kbd "+")   #'qvm-list-snapshot-create)
-    (define-key map (kbd "N")   #'qvm-list-snapshot-list)
-    (define-key map (kbd "R")   #'qvm-list-snapshot-restore)
-    (define-key map (kbd "X")   #'qvm-list-snapshot-delete)
-    (define-key map (kbd "g")   #'qvm-list-refresh)
+    (define-key map (kbd "+")   #'qemu-manager-list-snapshot-create)
+    (define-key map (kbd "N")   #'qemu-manager-list-snapshot-list)
+    (define-key map (kbd "R")   #'qemu-manager-list-snapshot-restore)
+    (define-key map (kbd "X")   #'qemu-manager-list-snapshot-delete)
+    (define-key map (kbd "g")   #'qemu-manager-list-refresh)
     (define-key map (kbd "q")   #'quit-window)
-    (define-key map (kbd "?")   #'qvm-menu)
+    (define-key map (kbd "?")   #'qemu-manager-menu)
     map)
-  "Keymap for `qvm-list-mode'.")
+  "Keymap for `qemu-manager-list-mode'.")
 
-(define-derived-mode qvm-list-mode tabulated-list-mode "QVM"
-  "Major mode for the qvm VM list buffer."
+(define-derived-mode qemu-manager-list-mode tabulated-list-mode "QEMU-Manager"
+  "Major mode for the qemu-manager VM list buffer."
   (setq tabulated-list-format
         [("Name"    20 t)
          ("Status"   8 t)
@@ -988,231 +988,231 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
          ("Port"     6 nil)])
   (setq tabulated-list-sort-key '("Name" . nil))
   (tabulated-list-init-header)
-  (setq-local revert-buffer-function (lambda (&rest _) (qvm-list-refresh))))
+  (setq-local revert-buffer-function (lambda (&rest _) (qemu-manager-list-refresh))))
 
-(defun qvm--list-entries ()
+(defun qemu-manager--list-entries ()
   "Generate tabulated list entries for all VMs."
   (mapcar
    (lambda (name)
-     (let* ((conf    (qvm--read-conf name))
-            (running (qvm--running-p name))
+     (let* ((conf    (qemu-manager--read-conf name))
+            (running (qemu-manager--running-p name))
             (status  (if running
                          (propertize "running" 'face '(:foreground "green"))
                        (propertize "stopped" 'face 'shadow)))
-            (disk    (qvm--disk-size name))
-            (memory  (or (qvm--conf-get conf "VM_MEMORY") "?"))
-            (cpus    (or (qvm--conf-get conf "VM_CPUS") "?"))
-            (ssh     (or (qvm--conf-get conf "VM_SSH_PORT") "?"))
-            (display (or (qvm--conf-get conf "VM_DISPLAY") "vnc"))
+            (disk    (qemu-manager--disk-size name))
+            (memory  (or (qemu-manager--conf-get conf "VM_MEMORY") "?"))
+            (cpus    (or (qemu-manager--conf-get conf "VM_CPUS") "?"))
+            (ssh     (or (qemu-manager--conf-get conf "VM_SSH_PORT") "?"))
+            (display (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc"))
             (port    (if (string= display "spice")
-                         (or (qvm--conf-get conf "VM_SPICE_PORT") "?")
-                       (or (qvm--conf-get conf "VM_VNC_DISPLAY") "?"))))
+                         (or (qemu-manager--conf-get conf "VM_SPICE_PORT") "?")
+                       (or (qemu-manager--conf-get conf "VM_VNC_DISPLAY") "?"))))
        (list name
              (vector
               (propertize name 'face 'bold)
               status memory cpus disk ssh display port))))
-   (qvm--list-vms)))
+   (qemu-manager--list-vms)))
 
-(defun qvm-list-refresh ()
+(defun qemu-manager-list-refresh ()
   "Refresh the VM list buffer."
   (interactive)
-  (when-let ((buf (get-buffer "*qvm*")))
+  (when-let ((buf (get-buffer "*qemu-manager*")))
     (with-current-buffer buf
-      (setq tabulated-list-entries (qvm--list-entries))
+      (setq tabulated-list-entries (qemu-manager--list-entries))
       (tabulated-list-print t)
-      (qvm-list--goto-first-entry))))
+      (qemu-manager-list--goto-first-entry))))
 
-(defun qvm-list--goto-first-entry ()
+(defun qemu-manager-list--goto-first-entry ()
   "Move point to the first data row, skipping the header."
   (goto-char (point-min))
   (while (and (not (tabulated-list-get-id)) (not (eobp)))
     (forward-line 1)))
 
-(defun qvm-list--current-name ()
+(defun qemu-manager-list--current-name ()
   "Return the VM name at point in the list buffer."
   (or (tabulated-list-get-id)
       (user-error "Move point to a VM row first (use n/p or arrow keys)")))
 
-(defun qvm-list-run ()
+(defun qemu-manager-list-run ()
   "Run the VM at point (start + viewer)."
   (interactive)
-  (qvm-run (qvm-list--current-name)))
+  (qemu-manager-run (qemu-manager-list--current-name)))
 
-(defun qvm-list-start ()
+(defun qemu-manager-list-start ()
   "Start the VM at point."
   (interactive)
-  (qvm-start (qvm-list--current-name)))
+  (qemu-manager-start (qemu-manager-list--current-name)))
 
-(defun qvm-list-stop ()
+(defun qemu-manager-list-stop ()
   "Stop the VM at point, with confirmation."
   (interactive)
-  (let ((name (qvm-list--current-name)))
+  (let ((name (qemu-manager-list--current-name)))
     (when (yes-or-no-p (format "Stop VM '%s'? " name))
-      (qvm-stop name))))
+      (qemu-manager-stop name))))
 
-(defun qvm-list-vnc ()
+(defun qemu-manager-list-vnc ()
   "Open VNC viewer for VM at point."
   (interactive)
-  (qvm-vnc (qvm-list--current-name)))
+  (qemu-manager-vnc (qemu-manager-list--current-name)))
 
-(defun qvm-list-spice ()
+(defun qemu-manager-list-spice ()
   "Open SPICE viewer for VM at point."
   (interactive)
-  (qvm-spice (qvm-list--current-name)))
+  (qemu-manager-spice (qemu-manager-list--current-name)))
 
-(defun qvm-list-dired ()
+(defun qemu-manager-list-dired ()
   "Open dired on the VM at point via TRAMP."
   (interactive)
-  (qvm-dired (qvm-list--current-name)))
+  (qemu-manager-dired (qemu-manager-list--current-name)))
 
-(defun qvm-list-eshell ()
+(defun qemu-manager-list-eshell ()
   "Open eshell on the VM at point via TRAMP."
   (interactive)
-  (qvm-eshell (qvm-list--current-name)))
+  (qemu-manager-eshell (qemu-manager-list--current-name)))
 
-(defun qvm-list-info ()
+(defun qemu-manager-list-info ()
   "Show info for the VM at point."
   (interactive)
-  (qvm-info (qvm-list--current-name)))
+  (qemu-manager-info (qemu-manager-list--current-name)))
 
-(defun qvm-list-display ()
+(defun qemu-manager-list-display ()
   "Toggle display type (vnc/spice) for VM at point."
   (interactive)
-  (qvm-display (qvm-list--current-name)))
+  (qemu-manager-display (qemu-manager-list--current-name)))
 
-(defun qvm-list-keyboard ()
+(defun qemu-manager-list-keyboard ()
   "Setup keyboard remaps and sticky keys on VM at point."
   (interactive)
-  (qvm-keyboard (qvm-list--current-name)))
+  (qemu-manager-keyboard (qemu-manager-list--current-name)))
 
-(defun qvm-list-clip-copy ()
+(defun qemu-manager-list-clip-copy ()
   "Copy VM clipboard to host (w = kill/copy in Emacs)."
   (interactive)
-  (qvm-clip-copy (qvm-list--current-name)))
+  (qemu-manager-clip-copy (qemu-manager-list--current-name)))
 
-(defun qvm-list-clip-paste ()
+(defun qemu-manager-list-clip-paste ()
   "Paste host clipboard to VM (y = yank/paste in Emacs)."
   (interactive)
-  (qvm-clip-paste (qvm-list--current-name)))
+  (qemu-manager-clip-paste (qemu-manager-list--current-name)))
 
-(defun qvm-list-clip-install ()
+(defun qemu-manager-list-clip-install ()
   "Install xclip on the VM at point via a terminal buffer."
   (interactive)
-  (let ((name (qvm-list--current-name)))
+  (let ((name (qemu-manager-list--current-name)))
     (when (yes-or-no-p (format "Install xclip on '%s'? " name))
-      (qvm--clip-install name))))
+      (qemu-manager--clip-install name))))
 
-(defun qvm-list-ssh-copy-id ()
+(defun qemu-manager-list-ssh-copy-id ()
   "Push SSH public key to the VM at point."
   (interactive)
-  (qvm-ssh-copy-id (qvm-list--current-name)))
+  (qemu-manager-ssh-copy-id (qemu-manager-list--current-name)))
 
-(defun qvm-list-scp ()
+(defun qemu-manager-list-scp ()
   "SCP files to the VM at point."
   (interactive)
-  (let ((name (qvm-list--current-name)))
-    (qvm-scp name
+  (let ((name (qemu-manager-list--current-name)))
+    (qemu-manager-scp name
              (if (derived-mode-p 'dired-mode)
                  (dired-get-marked-files nil nil nil nil t)
                (list (read-file-name "File to send: " nil nil t)))
-             (let* ((conf (qvm--read-conf name))
-                    (user (qvm--conf-get conf "VM_USER")))
+             (let* ((conf (qemu-manager--read-conf name))
+                    (user (qemu-manager--conf-get conf "VM_USER")))
                (read-string "Remote directory: "
                             (format "/home/%s/" user))))))
 
-(defun qvm-list-clone ()
+(defun qemu-manager-list-clone ()
   "Clone the VM at point."
   (interactive)
-  (let ((name (qvm-list--current-name)))
-    (qvm-clone name
+  (let ((name (qemu-manager-list--current-name)))
+    (qemu-manager-clone name
                (read-string (format "Clone '%s' as: " name))
                (yes-or-no-p "Create linked (COW) clone? "))))
 
-(defun qvm-list-snapshot-create ()
+(defun qemu-manager-list-snapshot-create ()
   "Create a snapshot for the VM at point."
   (interactive)
-  (let ((name (qvm-list--current-name)))
-    (qvm-snapshot-create name (read-string (format "Snapshot tag for '%s': " name)))))
+  (let ((name (qemu-manager-list--current-name)))
+    (qemu-manager-snapshot-create name (read-string (format "Snapshot tag for '%s': " name)))))
 
-(defun qvm-list-snapshot-list ()
+(defun qemu-manager-list-snapshot-list ()
   "List snapshots for the VM at point."
   (interactive)
-  (qvm-snapshot-list (qvm-list--current-name)))
+  (qemu-manager-snapshot-list (qemu-manager-list--current-name)))
 
-(defun qvm-list-snapshot-restore ()
+(defun qemu-manager-list-snapshot-restore ()
   "Restore a snapshot for the VM at point."
   (interactive)
-  (let* ((name (qvm-list--current-name))
-         (tags (qvm--snapshot-tags name))
+  (let* ((name (qemu-manager-list--current-name))
+         (tags (qemu-manager--snapshot-tags name))
          (tag (completing-read (format "Restore snapshot for '%s': " name) tags nil t)))
-    (qvm-snapshot-restore name tag)))
+    (qemu-manager-snapshot-restore name tag)))
 
-(defun qvm-list-snapshot-delete ()
+(defun qemu-manager-list-snapshot-delete ()
   "Delete a snapshot from the VM at point."
   (interactive)
-  (let* ((name (qvm-list--current-name))
-         (tags (qvm--snapshot-tags name))
+  (let* ((name (qemu-manager-list--current-name))
+         (tags (qemu-manager--snapshot-tags name))
          (tag (completing-read (format "Delete snapshot from '%s': " name) tags nil t)))
-    (qvm-snapshot-delete name tag)))
+    (qemu-manager-snapshot-delete name tag)))
 
-(defun qvm-list-create ()
+(defun qemu-manager-list-create ()
   "Create a new VM from an ISO image."
   (interactive)
-  (call-interactively #'qvm-create))
+  (call-interactively #'qemu-manager-create))
 
 ;;;###autoload
-(defun qvm-list ()
-  "Open the qvm VM manager buffer."
+(defun qemu-manager-list ()
+  "Open the qemu-manager VM manager buffer."
   (interactive)
-  (let ((buf (get-buffer-create "*qvm*")))
+  (let ((buf (get-buffer-create "*qemu-manager*")))
     (with-current-buffer buf
-      (qvm-list-mode)
-      (setq tabulated-list-entries (qvm--list-entries))
+      (qemu-manager-list-mode)
+      (setq tabulated-list-entries (qemu-manager--list-entries))
       (tabulated-list-print)
-      (qvm-list--goto-first-entry))
+      (qemu-manager-list--goto-first-entry))
     (pop-to-buffer buf)))
 
 ;; ── Transient menu ───────────────────────────────────────────────────────────
 
-;;;###autoload (autoload 'qvm-menu "qvm" nil t)
-(transient-define-prefix qvm-menu ()
-  "QVM - QEMU Virtual Machine Manager."
-  [:if (lambda () (derived-mode-p 'qvm-list-mode))
+;;;###autoload (autoload 'qemu-manager-menu "qemu-manager" nil t)
+(transient-define-prefix qemu-manager-menu ()
+  "QEMU-Manager - QEMU Virtual Machine Manager."
+  [:if (lambda () (derived-mode-p 'qemu-manager-list-mode))
    ["Lifecycle"
-    ("s" "Start"              qvm-list-start)
-    ("r" "Run (start+viewer)" qvm-list-run)
-    ("x" "Stop"               qvm-list-stop)
-    ("c" "Create new VM"      qvm-list-create)
-    ("C" "Clone"              qvm-list-clone)]
+    ("s" "Start"              qemu-manager-list-start)
+    ("r" "Run (start+viewer)" qemu-manager-list-run)
+    ("x" "Stop"               qemu-manager-list-stop)
+    ("c" "Create new VM"      qemu-manager-list-create)
+    ("C" "Clone"              qemu-manager-list-clone)]
    ["Connect"
-    ("v" "VNC viewer"         qvm-list-vnc)
-    ("V" "SPICE viewer"       qvm-list-spice)
-    ("d" "Dired (TRAMP)"      qvm-list-dired)
-    ("e" "Eshell (TRAMP)"     qvm-list-eshell)]]
-  [:if (lambda () (derived-mode-p 'qvm-list-mode))
+    ("v" "VNC viewer"         qemu-manager-list-vnc)
+    ("V" "SPICE viewer"       qemu-manager-list-spice)
+    ("d" "Dired (TRAMP)"      qemu-manager-list-dired)
+    ("e" "Eshell (TRAMP)"     qemu-manager-list-eshell)]]
+  [:if (lambda () (derived-mode-p 'qemu-manager-list-mode))
    ["Snapshots"
-    ("+" "Create snapshot"    qvm-list-snapshot-create)
-    ("N" "List snapshots"     qvm-list-snapshot-list)
-    ("R" "Restore snapshot"   qvm-list-snapshot-restore)
-    ("X" "Delete snapshot"    qvm-list-snapshot-delete)]
+    ("+" "Create snapshot"    qemu-manager-list-snapshot-create)
+    ("N" "List snapshots"     qemu-manager-list-snapshot-list)
+    ("R" "Restore snapshot"   qemu-manager-list-snapshot-restore)
+    ("X" "Delete snapshot"    qemu-manager-list-snapshot-delete)]
    ["Tools"
-    ("S" "Send files (rsync)" qvm-list-scp)
-    ("P" "Push SSH key"       qvm-list-ssh-copy-id)
-    ("D" "Toggle display"     qvm-list-display)
-    ("k" "Keyboard setup"     qvm-list-keyboard)
-    ("w" "Clipboard copy"     qvm-list-clip-copy)
-    ("y" "Clipboard paste"    qvm-list-clip-paste)
-    ("I" "Install xclip"      qvm-list-clip-install)
-    ("i" "VM info"            qvm-list-info)]]
-  [:if-not (lambda () (derived-mode-p 'qvm-list-mode))
-   :description "QVM"
-   ("l" "Open VM list"       qvm-list)
-   ("s" "Start VM"           qvm-start)
-   ("x" "Stop VM"            qvm-stop)
-   ("r" "Run VM"             qvm-run)
-   ("c" "Create new VM"      qvm-create)
-   ("i" "VM info"            qvm-info)])
+    ("S" "Send files (rsync)" qemu-manager-list-scp)
+    ("P" "Push SSH key"       qemu-manager-list-ssh-copy-id)
+    ("D" "Toggle display"     qemu-manager-list-display)
+    ("k" "Keyboard setup"     qemu-manager-list-keyboard)
+    ("w" "Clipboard copy"     qemu-manager-list-clip-copy)
+    ("y" "Clipboard paste"    qemu-manager-list-clip-paste)
+    ("I" "Install xclip"      qemu-manager-list-clip-install)
+    ("i" "VM info"            qemu-manager-list-info)]]
+  [:if-not (lambda () (derived-mode-p 'qemu-manager-list-mode))
+   :description "QEMU-Manager"
+   ("l" "Open VM list"       qemu-manager-list)
+   ("s" "Start VM"           qemu-manager-start)
+   ("x" "Stop VM"            qemu-manager-stop)
+   ("r" "Run VM"             qemu-manager-run)
+   ("c" "Create new VM"      qemu-manager-create)
+   ("i" "VM info"            qemu-manager-info)])
 
-(provide 'qvm)
+(provide 'qemu-manager)
 
-;;; qvm.el ends here
+;;; qemu-manager.el ends here

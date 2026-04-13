@@ -1,14 +1,14 @@
-#+title: qvm.el --- QEMU VM manager for Emacs
+#+title: qemu-manager.el --- QEMU VM manager for Emacs
 #+author: James Dyer
 #+version: 1.0.0
 
-*qvm.el* manages QEMU virtual machines directly from Emacs. It calls ~qemu-system-x86_64~, ~qemu-img~, ~vncviewer~, ~spicy~, ~ssh~, and ~rsync~ directly -- no external wrapper script required.
+*qemu-manager.el* manages QEMU virtual machines directly from Emacs. It calls ~qemu-system-x86_64~, ~qemu-img~, ~vncviewer~, ~spicy~, ~ssh~, and ~rsync~ directly -- no external wrapper script required.
 
 * Features
 
-- *VM List Buffer*: A tabulated list (~qvm-list~) showing all your VMs with their status (running/stopped), memory, CPUs, disk usage, SSH port, and display type.
-- *Transient Menu*: Press ~?~ in the list buffer (or ~M-x qvm-menu~) for a discoverable menu of all commands, grouped into Lifecycle, Connect, Snapshots, and Tools.
-- *Async Operations*: VM operations (start, stop, etc.) run asynchronously, and their output is shown in a dedicated ~*qvm output*~ buffer.
+- *VM List Buffer*: A tabulated list (~qemu-manager-list~) showing all your VMs with their status (running/stopped), memory, CPUs, disk usage, SSH port, and display type.
+- *Transient Menu*: Press ~?~ in the list buffer (or ~M-x qemu-manager-menu~) for a discoverable menu of all commands, grouped into Lifecycle, Connect, Snapshots, and Tools.
+- *Async Operations*: VM operations (start, stop, etc.) run asynchronously, and their output is shown in a dedicated ~*qemu-manager output*~ buffer.
 - *TRAMP Integration*: Quickly open /dired/ or an /eshell/ on a running VM via SSH (localhost tunneling).
 - *Display Support*: Launch VNC or SPICE viewers for any running VM. SPICE provides clipboard sharing, dynamic resolution, and better keyboard input handling.
 - *File Transfer*: Easily rsync files (or dired marked files) to a VM.
@@ -42,26 +42,26 @@ External tools (must be in ~PATH~):
 
 ** Manual
 
-Download ~qvm.el~ to your load path and add the following to your ~init.el~:
+Download ~qemu-manager.el~ to your load path and add the following to your ~init.el~:
 
 #+begin_src elisp
-(require 'qvm)
-(setq qvm-base-dir "~/VM") ; adjust to your VM storage directory
+(require 'qemu-manager)
+(setq qemu-manager-base-dir "~/VM") ; adjust to your VM storage directory
 #+end_src
 
 ** Using use-package
 
 #+begin_src elisp
-(use-package qvm
-  :load-path "~/source/repos/qvm"
-  :bind ("C-c v" . qvm-list)
+(use-package qemu-manager
+  :load-path "~/source/repos/qemu-manager"
+  :bind ("C-c v" . qemu-manager-list)
   :config
-  (setq qvm-base-dir "~/VM"))
+  (setq qemu-manager-base-dir "~/VM"))
 #+end_src
 
 * Usage
 
-Run ~M-x qvm-list~ to open the VM manager buffer, then press ~?~ to open the transient menu. You can also run ~M-x qvm-menu~ from anywhere -- outside the list buffer it offers a minimal set of commands that prompt for a VM name.
+Run ~M-x qemu-manager-list~ to open the VM manager buffer, then press ~?~ to open the transient menu. You can also run ~M-x qemu-manager-menu~ from anywhere -- outside the list buffer it offers a minimal set of commands that prompt for a VM name.
 
 ** Keybindings in the VM List Buffer
 
@@ -118,7 +118,7 @@ SPICE offers advantages over VNC for Wayland hosts (e.g. SwayWM) where host keyb
 Toggle an existing VM between display types with ~D~ in the list buffer, or:
 
 #+begin_src elisp
-(qvm-display "myvm") ; toggles between vnc and spice
+(qemu-manager-display "myvm") ; toggles between vnc and spice
 #+end_src
 
 Existing VMs default to VNC for backward compatibility.
@@ -162,24 +162,24 @@ Requires ~wl-copy~ / ~wl-paste~ on the host (included with sway).
 
 | Variable                  | Description                                 | Default                      |
 |---------------------------+---------------------------------------------+------------------------------|
-| ~qvm-base-dir~            | Directory where VMs are stored              | =~/VM=                       |
-| ~qvm-qemu-binary~         | Path to QEMU system emulator                | =qemu-system-x86_64= in PATH |
-| ~qvm-vnc-viewer~          | VNC viewer program                          | =vncviewer= in PATH          |
-| ~qvm-vnc-viewer-args~     | Extra args for VNC viewer                   | =("-RemoteResize=1")=        |
-| ~qvm-spice-viewer~        | SPICE viewer program                        | =spicy= in PATH              |
-| ~qvm-default-memory~      | Default memory for new VMs                  | ="4G"=                       |
-| ~qvm-default-cpus~        | Default CPU count for new VMs               | ="4"=                        |
-| ~qvm-default-disk~        | Default disk size for new VMs               | ="40G"=                      |
-| ~qvm-default-ssh-port~    | Starting SSH port for auto-assignment       | =2222=                       |
-| ~qvm-default-vnc-display~ | Starting VNC display for auto-assignment    | =1=                          |
-| ~qvm-default-spice-port~  | Starting SPICE port for auto-assignment     | =5930=                       |
-| ~qvm-default-display~     | Default display type (="vnc"= or ="spice"=) | ="vnc"=                      |
-| ~qvm-default-user~        | Default SSH username for new VMs            | Current login name           |
-| ~qvm-output-buffer~       | Buffer name for command output              | ="*qvm output*"=             |
+| ~qemu-manager-base-dir~            | Directory where VMs are stored              | =~/VM=                       |
+| ~qemu-manager-qemu-binary~         | Path to QEMU system emulator                | =qemu-system-x86_64= in PATH |
+| ~qemu-manager-vnc-viewer~          | VNC viewer program                          | =vncviewer= in PATH          |
+| ~qemu-manager-vnc-viewer-args~     | Extra args for VNC viewer                   | =("-RemoteResize=1")=        |
+| ~qemu-manager-spice-viewer~        | SPICE viewer program                        | =spicy= in PATH              |
+| ~qemu-manager-default-memory~      | Default memory for new VMs                  | ="4G"=                       |
+| ~qemu-manager-default-cpus~        | Default CPU count for new VMs               | ="4"=                        |
+| ~qemu-manager-default-disk~        | Default disk size for new VMs               | ="40G"=                      |
+| ~qemu-manager-default-ssh-port~    | Starting SSH port for auto-assignment       | =2222=                       |
+| ~qemu-manager-default-vnc-display~ | Starting VNC display for auto-assignment    | =1=                          |
+| ~qemu-manager-default-spice-port~  | Starting SPICE port for auto-assignment     | =5930=                       |
+| ~qemu-manager-default-display~     | Default display type (="vnc"= or ="spice"=) | ="vnc"=                      |
+| ~qemu-manager-default-user~        | Default SSH username for new VMs            | Current login name           |
+| ~qemu-manager-output-buffer~       | Buffer name for command output              | ="*qemu-manager output*"=             |
 
 * Alternatives
 
-| Package            | Description                        | Difference from qvm.el                                                                           |
+| Package            | Description                        | Difference from qemu-manager.el                                                                           |
 |--------------------+------------------------------------+--------------------------------------------------------------------------------------------------|
 | [[https://github.com/Arian-D/evmm][evmm]]               | Minimalistic VM launcher for Emacs | Declare VMs and start them -- no stop, snapshots, cloning, list UI, TRAMP, or display management |
 | [[https://github.com/stsquad/qemu-mode][qemu-mode]]          | Comint mode for QEMU development   | Aimed at kernel/QEMU developers (boot kernel + rootfs), not end-user VM management               |

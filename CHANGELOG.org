@@ -3,40 +3,40 @@
 
 * 1.0.0 — <2026-04-05>
 
-Pure Elisp rewrite -- removed dependency on the =qvm= bash script.
+Pure Elisp rewrite -- removed dependency on the =qemu-manager= bash script.
 
 ** Changed
 
-- ~qvm.el~ now calls QEMU tools (~qemu-system-x86_64~, ~qemu-img~), SSH utilities, and display viewers directly -- the external ~qvm~ shell script is no longer required
-- ~qvm-start~ builds QEMU command-line arguments in Elisp and launches via ~make-process~ with PID file management and automatic cleanup on exit
-- ~qvm-stop~ uses ~signal-process~ (SIGTERM) with timer-based polling, escalating to SIGKILL after 10 seconds
-- ~qvm-info~ now renders VM details purely in Elisp (no external process)
-- ~qvm-display~ toggles display type by updating ~vm.conf~ directly (no external process)
-- ~qvm-create~ chains ~qemu-img create~ -> config write -> QEMU ISO boot via async callbacks
-- ~qvm-clone~ calls ~qemu-img create~ (linked) or ~cp~ (full) directly, with auto-assigned ports
-- ~qvm-snapshot-*~ commands call ~qemu-img snapshot~ directly
-- ~qvm-vnc~ / ~qvm-spice~ launch viewer programs directly
-- ~qvm-keyboard~ runs gsettings commands via a single SSH call
-- ~qvm-clip-copy~ / ~qvm-clip-paste~ use synchronous SSH + ~wl-copy~ / ~wl-paste~
-- ~qvm-ssh-copy-id~ runs ~ssh-copy-id~ directly in a term buffer; a sentinel handles permission fixing and SSH config entry creation
+- ~qemu-manager.el~ now calls QEMU tools (~qemu-system-x86_64~, ~qemu-img~), SSH utilities, and display viewers directly -- the external ~qemu-manager~ shell script is no longer required
+- ~qemu-manager-start~ builds QEMU command-line arguments in Elisp and launches via ~make-process~ with PID file management and automatic cleanup on exit
+- ~qemu-manager-stop~ uses ~signal-process~ (SIGTERM) with timer-based polling, escalating to SIGKILL after 10 seconds
+- ~qemu-manager-info~ now renders VM details purely in Elisp (no external process)
+- ~qemu-manager-display~ toggles display type by updating ~vm.conf~ directly (no external process)
+- ~qemu-manager-create~ chains ~qemu-img create~ -> config write -> QEMU ISO boot via async callbacks
+- ~qemu-manager-clone~ calls ~qemu-img create~ (linked) or ~cp~ (full) directly, with auto-assigned ports
+- ~qemu-manager-snapshot-*~ commands call ~qemu-img snapshot~ directly
+- ~qemu-manager-vnc~ / ~qemu-manager-spice~ launch viewer programs directly
+- ~qemu-manager-keyboard~ runs gsettings commands via a single SSH call
+- ~qemu-manager-clip-copy~ / ~qemu-manager-clip-paste~ use synchronous SSH + ~wl-copy~ / ~wl-paste~
+- ~qemu-manager-ssh-copy-id~ runs ~ssh-copy-id~ directly in a term buffer; a sentinel handles permission fixing and SSH config entry creation
 - Clip install runs ~ssh -t~ directly in a term buffer with package manager detection
 
 ** Added
 
-- ~qvm-qemu-binary~ customization (path to ~qemu-system-x86_64~)
-- ~qvm-vnc-viewer~ / ~qvm-vnc-viewer-args~ / ~qvm-spice-viewer~ customizations for viewer programs
-- ~qvm-default-memory~ / ~qvm-default-cpus~ / ~qvm-default-disk~ customizations for VM creation defaults
-- ~qvm-default-ssh-port~ / ~qvm-default-vnc-display~ / ~qvm-default-spice-port~ for port auto-assignment starting values
-- ~qvm-default-display~ / ~qvm-default-user~ customizations
-- Port allocation helpers (~qvm--next-free-port~, ~qvm--next-free-vnc~) using ~ss~ to detect used ports
-- Config writing (~qvm--write-conf~, ~qvm--update-conf-value~) for creating and modifying ~vm.conf~ from Elisp
-- QEMU process launcher (~qvm--start-qemu~) with PID file lifecycle, sentinel cleanup, and automatic list refresh on VM exit
+- ~qemu-manager-qemu-binary~ customization (path to ~qemu-system-x86_64~)
+- ~qemu-manager-vnc-viewer~ / ~qemu-manager-vnc-viewer-args~ / ~qemu-manager-spice-viewer~ customizations for viewer programs
+- ~qemu-manager-default-memory~ / ~qemu-manager-default-cpus~ / ~qemu-manager-default-disk~ customizations for VM creation defaults
+- ~qemu-manager-default-ssh-port~ / ~qemu-manager-default-vnc-display~ / ~qemu-manager-default-spice-port~ for port auto-assignment starting values
+- ~qemu-manager-default-display~ / ~qemu-manager-default-user~ customizations
+- Port allocation helpers (~qemu-manager--next-free-port~, ~qemu-manager--next-free-vnc~) using ~ss~ to detect used ports
+- Config writing (~qemu-manager--write-conf~, ~qemu-manager--update-conf-value~) for creating and modifying ~vm.conf~ from Elisp
+- QEMU process launcher (~qemu-manager--start-qemu~) with PID file lifecycle, sentinel cleanup, and automatic list refresh on VM exit
 
 ** Removed
 
-- ~qvm-executable~ customization variable
-- ~qvm--run-command~ function (replaced by ~qvm--run-process~ which takes a program + args directly)
-- Dependency on the external ~qvm~ shell script
+- ~qemu-manager-executable~ customization variable
+- ~qemu-manager--run-command~ function (replaced by ~qemu-manager--run-process~ which takes a program + args directly)
+- Dependency on the external ~qemu-manager~ shell script
 
 * 0.5.0 — <2026-04-05>
 
@@ -44,16 +44,16 @@ Transient menu for discoverable command access.
 
 ** Added
 
-- ~qvm-menu~ transient prefix command with 2×2 grouped layout: Lifecycle, Connect, Snapshots, Tools
+- ~qemu-manager-menu~ transient prefix command with 2×2 grouped layout: Lifecycle, Connect, Snapshots, Tools
 - ~?~ keybinding in list buffer to invoke the transient menu
-- Context-aware menu: shows list-buffer commands when in ~*qvm*~, standalone commands elsewhere
+- Context-aware menu: shows list-buffer commands when in ~*qemu-manager*~, standalone commands elsewhere
 - ~transient~ added to ~Package-Requires~
 
 ** Changed
 
 - ~n~ / ~p~ now navigate the list (next/previous line)
 - Snapshot create moved from ~n~ to ~+~
-- Removed minibuffer keybinding hint on ~qvm-list~ startup (replaced by transient menu)
+- Removed minibuffer keybinding hint on ~qemu-manager-list~ startup (replaced by transient menu)
 
 * 0.4.0 — <2026-04-04>
 
@@ -61,15 +61,15 @@ Snapshots and VM cloning.
 
 ** Added
 
-- ~qvm snapshot <name> create|list|restore|delete [tag]~ for managing qcow2 internal snapshots on stopped VMs
-- ~qvm clone <source> <new-name> [--linked]~ to clone a VM
+- ~qemu-manager snapshot <name> create|list|restore|delete [tag]~ for managing qcow2 internal snapshots on stopped VMs
+- ~qemu-manager clone <source> <new-name> [--linked]~ to clone a VM
   - Full clone: independent copy of the entire disk
   - Linked clone (~--linked~): copy-on-write overlay backed by the source disk (fast, space-efficient)
   - Auto-assigns new SSH, VNC, and SPICE ports to avoid collisions
-- Emacs: ~qvm-snapshot-create~, ~qvm-snapshot-list~, ~qvm-snapshot-restore~, ~qvm-snapshot-delete~ interactive commands
-- Emacs: ~qvm-clone~ interactive command with prompt for full vs linked clone
+- Emacs: ~qemu-manager-snapshot-create~, ~qemu-manager-snapshot-list~, ~qemu-manager-snapshot-restore~, ~qemu-manager-snapshot-delete~ interactive commands
+- Emacs: ~qemu-manager-clone~ interactive command with prompt for full vs linked clone
 - Emacs: ~n~ (snapshot create), ~N~ (snapshot list), ~R~ (snapshot restore), ~X~ (snapshot delete), ~C~ (clone) keybindings in list buffer
-- Emacs: ~qvm--snapshot-tags~ helper parses ~qemu-img snapshot -l~ output for completing-read on restore and delete
+- Emacs: ~qemu-manager--snapshot-tags~ helper parses ~qemu-img snapshot -l~ output for completing-read on restore and delete
 
 * 0.3.0 — <2026-04-03>
 
@@ -77,14 +77,14 @@ Clipboard sharing over SSH, display switching, and SwayWM integration notes.
 
 ** Added
 
-- ~qvm clip <name> copy|paste~ for clipboard sharing over SSH between host and VM
+- ~qemu-manager clip <name> copy|paste~ for clipboard sharing over SSH between host and VM
   - Auto-detects guest clipboard tool: ~wl-paste~/~wl-copy~ (Wayland), ~xclip~ (X11), ~xsel~
   - Single SSH call per operation (no double password prompts)
-- ~qvm clip <name> install~ to install clipboard tools (~wl-clipboard~ + ~xclip~) on the guest
+- ~qemu-manager clip <name> install~ to install clipboard tools (~wl-clipboard~ + ~xclip~) on the guest
   - Auto-detects package manager (zypper, apt, dnf, pacman, apk)
   - Kills PackageKit if it is blocking the package manager
   - Runs in a terminal buffer from Emacs for interactive sudo
-- ~qvm display <name> [vnc|spice]~ to show or switch display type without recreating the VM
+- ~qemu-manager display <name> [vnc|spice]~ to show or switch display type without recreating the VM
 - Emacs: ~w~ (clip copy), ~y~ (clip paste), ~I~ (clip install), ~D~ (toggle display) keybindings in list buffer
 - Documented SwayWM ~shortcuts_inhibitor~ workaround for SPICE keyboard grab
 
@@ -94,21 +94,21 @@ SPICE display support, keyboard setup command, and Emacs UI updates.
 
 ** Added
 
-- SPICE display backend as an alternative to VNC (~--display spice~ on ~qvm create~)
+- SPICE display backend as an alternative to VNC (~--display spice~ on ~qemu-manager create~)
   - Uses QXL graphics with ~spice-vdagent~ for clipboard sharing and dynamic resolution
-  - ~qvm spice <name>~ command to open SPICE viewer (~spicy~)
-  - ~qvm run~ auto-selects the correct viewer based on VM display type
-- ~qvm keyboard <name>~ command to configure keyboard remaps and sticky keys on GNOME Wayland guests via SSH
+  - ~qemu-manager spice <name>~ command to open SPICE viewer (~spicy~)
+  - ~qemu-manager run~ auto-selects the correct viewer based on VM display type
+- ~qemu-manager keyboard <name>~ command to configure keyboard remaps and sticky keys on GNOME Wayland guests via SSH
   - GB layout, CapsLock → Ctrl, Right Alt → Ctrl, sticky keys
-- Emacs: ~qvm-spice~ command and ~V~ keybinding in list buffer
-- Emacs: ~qvm-keyboard~ command and ~k~ keybinding in list buffer
+- Emacs: ~qemu-manager-spice~ command and ~V~ keybinding in list buffer
+- Emacs: ~qemu-manager-keyboard~ command and ~k~ keybinding in list buffer
 - ~VM_DISPLAY~ and ~VM_SPICE_PORT~ fields in ~vm.conf~
 
 ** Changed
 
 - Emacs: list buffer columns updated from "VNC" to "Display" and "Port"
-- ~qvm list~ and ~qvm info~ now show display type and corresponding port
-- Bumped ~qvm.el~ version to 0.2.0
+- ~qemu-manager list~ and ~qemu-manager info~ now show display type and corresponding port
+- Bumped ~qemu-manager.el~ version to 0.2.0
 
 ** Backward Compatibility
 
@@ -121,11 +121,11 @@ Initial release.
 
 ** Added
 
-- ~qvm~ shell script: Docker-inspired CLI for managing QEMU VMs
+- ~qemu-manager~ shell script: Docker-inspired CLI for managing QEMU VMs
   - create, install, start, run, stop, ssh, scp, vnc, list, info, rename, rm
   - VNC display with auto-assigned ports
   - User-mode networking with SSH port forwarding
-- ~qvm.el~ Emacs interface
+- ~qemu-manager.el~ Emacs interface
   - Tabulated list buffer with keybindings for all operations
   - TRAMP integration for dired and eshell
   - Async command output buffer
