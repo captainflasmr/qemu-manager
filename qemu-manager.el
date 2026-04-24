@@ -31,7 +31,7 @@
 ;; Features:
 ;;   - VM list buffer (qemu-manager-list) with keybindings for common operations
 ;;   - Transient menu (?) for discoverable access to all commands
-;;   - TRAMP integration: open shell or dired on a running VM
+;;   - TRAMP integration: open shell or Dired on a running VM
 ;;   - Start, stop, run (start+viewer), VNC and SPICE commands
 ;;   - Async command output shown in a dedicated buffer
 ;;
@@ -46,7 +46,7 @@
 ;;   c        -- create new VM (prompts for name, ISO, disk/mem/cpus)
 ;;   v        -- open VNC viewer
 ;;   V        -- open SPICE viewer
-;;   d        -- open dired via TRAMP
+;;   d        -- open Dired via TRAMP
 ;;   e        -- open eshell via TRAMP
 ;;   S        -- send files/directories to VM (rsync)
 ;;   P        -- push SSH key to VM (passwordless access)
@@ -298,7 +298,7 @@ user; remove it if you are running virtiofsd as root."
       "?")))
 
 (defun qemu-manager--ssh-config-host-p (name)
-  "Return non-nil if SSH config has a Host entry for qemu-manager-NAME."
+  "Return non-nil if SSH config has a Host entry for VM NAME."
   (let ((ssh-config (expand-file-name "~/.ssh/config")))
     (when (file-exists-p ssh-config)
       (with-temp-buffer
@@ -559,7 +559,7 @@ from before this Emacs session)."
 (defun qemu-manager--qemu-share-args (name conf memory)
   "Return QEMU args that wire up a virtiofs share for VM NAME.
 CONF is the parsed config alist; MEMORY is the -m size string
-(reused verbatim for the shared memory backend). Returns nil if
+\(reused verbatim for the shared memory backend).  Returns nil if
 no share is configured."
   (let ((share-path (qemu-manager--conf-get conf "SHARE_PATH")))
     (when (and share-path (not (string-empty-p share-path)))
@@ -598,7 +598,7 @@ Blocks briefly until the socket appears."
     (user-error "Share path does not exist: %s" share-path))
   (unless (or (file-executable-p qemu-manager-virtiofsd-binary)
               (executable-find qemu-manager-virtiofsd-binary))
-    (user-error "virtiofsd binary not found: %s" qemu-manager-virtiofsd-binary))
+    (user-error "Virtiofsd binary not found: %s" qemu-manager-virtiofsd-binary))
   (let* ((sock (qemu-manager--virtiofs-sock name))
          (pidfile (qemu-manager--virtiofsd-pid-file name))
          (buf (get-buffer-create (format "*virtiofsd: %s*" name)))
@@ -626,7 +626,7 @@ Blocks briefly until the socket appears."
           (sit-for 0.1)
           (setq tries (1+ tries))))
       (unless (and (process-live-p proc) (file-exists-p sock))
-        (user-error "virtiofsd failed to start; see buffer %s" (buffer-name buf)))
+        (user-error "Virtiofsd failed to start; see buffer %s" (buffer-name buf)))
       proc)))
 
 (defun qemu-manager--stop-virtiofsd (name)
@@ -683,7 +683,7 @@ Returns the process object."
             (format "%s@localhost" user)))))
 
 (defun qemu-manager--add-ssh-config (name user port)
-  "Add SSH config entry for VM NAME if not already present."
+  "Add SSH config entry for VM NAME, USER, and PORT if not already present."
   (let* ((ssh-config (expand-file-name "~/.ssh/config"))
          (host-alias (format "qemu-manager-%s" name)))
     (unless (and (file-exists-p ssh-config)
@@ -846,8 +846,8 @@ With prefix argument OFFLINE, disable networking (`-nic none')."
 (defun qemu-manager-share-set (name path tag)
   "Configure a virtiofs shared folder for VM NAME.
 PATH is the host directory to share; an empty string clears the
-share. TAG is the mount tag the guest will use with
-`mount -t virtiofs'. Changes take effect on the next start."
+share.  TAG is the mount tag the guest will use with
+`mount -t virtiofs'.  Changes take effect on the next start."
   (interactive
    (let* ((name (completing-read "Configure share for VM: "
                                  (qemu-manager--list-vms) nil t))
@@ -990,7 +990,7 @@ Runs in a terminal buffer since it may prompt for a password."
 
 ;;;###autoload
 (defun qemu-manager-dired (name)
-  "Open dired on VM NAME via TRAMP."
+  "Open Dired on VM NAME via TRAMP."
   (interactive (list (completing-read "Dired into VM: "
                                       (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
@@ -1001,7 +1001,7 @@ Runs in a terminal buffer since it may prompt for a password."
 (defun qemu-manager-eshell (name &optional path)
   "Open an eshell on VM NAME via TRAMP.
 With prefix arg, prompt for PATH -- an absolute remote path to
-start in (e.g. /mnt). This creates a buffer distinct from the
+start in (e.g. /mnt).  This creates a buffer distinct from the
 default per-VM eshell so the TRAMP-qualified starting directory
 is preserved."
   (interactive
@@ -1025,7 +1025,7 @@ is preserved."
 ;;;###autoload
 (defun qemu-manager-send (name paths remote-dir)
   "Send PATHS (files or directories) to VM NAME at REMOTE-DIR via rsync.
-When called from a dired buffer, uses the marked files or the file at point.
+When called from a Dired buffer, uses the marked files or the file at point.
 Otherwise, prompts for a file or directory.  The output buffer is
 displayed while the transfer runs so progress is visible."
   (interactive
@@ -1216,7 +1216,7 @@ With prefix argument or LINKED non-nil, create a linked (COW) clone."
 ;;;###autoload
 (defun qemu-manager-create (name iso disk memory cpus)
   "Create a new VM NAME, then boot ISO to install the OS.
-ISO is taken from the file at point in a dired buffer, or prompted
+ISO is taken from the file at point in a Dired buffer, or prompted
 via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
   (interactive
    (let* ((iso (if (and (derived-mode-p 'dired-mode)
@@ -1425,7 +1425,7 @@ With prefix argument OFFLINE, disable networking."
   (qemu-manager-spice (qemu-manager-list--current-name)))
 
 (defun qemu-manager-list-dired ()
-  "Open dired on the VM at point via TRAMP."
+  "Open Dired on the VM at point via TRAMP."
   (interactive)
   (qemu-manager-dired (qemu-manager-list--current-name)))
 
