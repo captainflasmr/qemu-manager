@@ -1,12 +1,29 @@
-;;; qemu-manager.el --- QEMU VM manager for Emacs -*- lexical-binding: t; -*-
-
-;; Author: James Dyer
+;;; qemu-manager.el --- Manage QEMU virtual machines -*- lexical-binding: t; -*-
+;;
+;; Copyright (C) 2026 James Dyer
+;; Author: James Dyer <captainflasmr@gmail.com>
 ;; Version: 1.1.0
-;; Keywords: tools, qemu, vm
 ;; Package-Requires: ((emacs "28.1") (transient "0.4.0"))
-
+;; Keywords: tools, convenience
+;; URL: https://github.com/captainflasmr/qemu-manager
+;;
+;; This file is not part of GNU Emacs.
+;;
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or (at
+;; your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+;;
 ;;; Commentary:
-
+;;
 ;; Manages QEMU virtual machines directly from Emacs.
 ;; Calls qemu-system-x86_64, qemu-img, vncviewer, spicy, and ssh
 ;; directly -- no external wrapper script required.
@@ -31,7 +48,7 @@
 ;;   V        -- open SPICE viewer
 ;;   d        -- open dired via TRAMP
 ;;   e        -- open eshell via TRAMP
-;;   S        -- rsync files to VM
+;;   S        -- send files/directories to VM (rsync)
 ;;   P        -- push SSH key to VM (passwordless access)
 ;;   F        -- configure virtiofs shared folder
 ;;   C        -- clone VM
@@ -51,9 +68,14 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'tabulated-list)
 (require 'transient)
 (require 'tramp)
+(require 'dired)
+
+(declare-function term-mode "term")
+(declare-function term-char-mode "term")
 
 ;; ── Customization ────────────────────────────────────────────────────────────
 
@@ -152,6 +174,25 @@ user; remove it if you are running virtiofsd as root."
   "Buffer name for command output."
   :type 'string
   :group 'qemu-manager)
+
+(defcustom qemu-manager-ready-timeout 180
+  "Seconds to poll for guest SSH readiness before giving up."
+  :type 'integer
+  :group 'qemu-manager)
+
+(defcustom qemu-manager-ready-interval 3
+  "Seconds between successive SSH readiness probes."
+  :type 'integer
+  :group 'qemu-manager)
+
+(defvar qemu-manager--ready-state (make-hash-table :test 'equal)
+  "Maps VM name to a readiness symbol: `booting', `ready', or `timeout'.")
+
+(defvar qemu-manager--ready-timers (make-hash-table :test 'equal)
+  "Maps VM name to its active readiness-poll timer.")
+
+(defvar qemu-manager--viewer-procs (make-hash-table :test 'equal)
+  "Maps VM name to its currently attached viewer process, if any.")
 
 ;; ── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -267,8 +308,9 @@ user; remove it if you are running virtiofsd as root."
 
 (defun qemu-manager--tramp-path (name &optional path)
   "Return a TRAMP path to VM NAME at remote PATH (default /home/user/).
-Uses the SSH config alias qemu-manager-NAME if available (set up by `qemu-manager-ssh-copy-id'),
-otherwise falls back to /ssh:user@localhost#port:path."
+Uses the SSH config alias qemu-manager-NAME if available (set up
+by `qemu-manager-ssh-copy-id'), otherwise falls back to
+/ssh:user@localhost#port:path."
   (let* ((conf (qemu-manager--read-conf name))
          (user (qemu-manager--conf-get conf "VM_USER"))
          (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
@@ -316,15 +358,15 @@ VNC display N maps to TCP port 5900+N."
 ;; ── Process helpers ──────────────────────────────────────────────────────────
 
 (defun qemu-manager--run-process (proc-name program args &optional on-finish)
-  "Run PROGRAM with ARGS asynchronously, showing output in `qemu-manager-output-buffer'.
-PROC-NAME names the process.  ON-FINISH called on successful exit."
+  "Run PROGRAM with ARGS asynchronously.
+Output is shown in `qemu-manager-output-buffer'.  PROC-NAME names
+the process.  ON-FINISH called on successful exit."
   (let ((buf (get-buffer-create qemu-manager-output-buffer)))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
       (insert (format "$ %s %s\n\n" program (string-join args " ")))
       (setq buffer-read-only t))
-    (display-buffer buf '(display-buffer-at-bottom . ((window-height . 10))))
     (make-process
      :name proc-name
      :buffer buf
@@ -345,14 +387,13 @@ PROC-NAME names the process.  ON-FINISH called on successful exit."
                    (funcall on-finish))))))
 
 (defun qemu-manager--display-output (text)
-  "Display TEXT in the qemu-manager output buffer."
+  "Write TEXT to the qemu-manager output buffer (kept buried)."
   (let ((buf (get-buffer-create qemu-manager-output-buffer)))
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
       (insert text)
-      (setq buffer-read-only t))
-    (display-buffer buf '(display-buffer-at-bottom . ((window-height . 10))))))
+      (setq buffer-read-only t))))
 
 (defun qemu-manager--append-output (text)
   "Append TEXT to the qemu-manager output buffer."
@@ -361,6 +402,139 @@ PROC-NAME names the process.  ON-FINISH called on successful exit."
       (let ((inhibit-read-only t))
         (goto-char (point-max))
         (insert text)))))
+
+;; ── Readiness polling ────────────────────────────────────────────────────────
+
+(defun qemu-manager--probe-ssh-ready (port callback)
+  "Probe localhost:PORT for an SSH banner.
+CALLBACK is invoked with t if the guest returned an SSH banner,
+nil otherwise.  The probe runs asynchronously and imposes a
+three-second hard cap."
+  (let ((seen-banner nil)
+        (done nil)
+        (proc-buf (generate-new-buffer " *qemu-manager-probe*")))
+    (cl-labels ((finish (val)
+                  (unless done
+                    (setq done t)
+                    (when (buffer-live-p proc-buf) (kill-buffer proc-buf))
+                    (funcall callback val))))
+      (condition-case _err
+          (let ((proc (make-network-process
+                       :name "qemu-manager-probe"
+                       :host "localhost"
+                       :service port
+                       :buffer proc-buf
+                       :nowait t
+                       :coding 'binary
+                       :filter (lambda (p str)
+                                 (when (string-match-p "\\`SSH-" str)
+                                   (setq seen-banner t))
+                                 (delete-process p))
+                       :sentinel (lambda (p _event)
+                                   (unless (process-live-p p)
+                                     (finish seen-banner))))))
+            (run-with-timer 3 nil
+                            (lambda ()
+                              (when (process-live-p proc)
+                                (delete-process proc))
+                              (finish seen-banner))))
+        (error (finish nil))))))
+
+(defun qemu-manager--clear-ready-state (name)
+  "Drop readiness state and any active timer for VM NAME."
+  (when-let ((timer (gethash name qemu-manager--ready-timers)))
+    (cancel-timer timer))
+  (remhash name qemu-manager--ready-timers)
+  (remhash name qemu-manager--ready-state))
+
+(defun qemu-manager--ready-poll (name deadline)
+  "Probe SSH readiness for VM NAME; re-arm until DEADLINE or success."
+  (remhash name qemu-manager--ready-timers)
+  (cond
+   ((not (qemu-manager--running-p name))
+    (qemu-manager--clear-ready-state name)
+    (qemu-manager-list-refresh))
+   ((> (float-time) deadline)
+    (puthash name 'timeout qemu-manager--ready-state)
+    (message "qemu-manager: timed out waiting for VM '%s' to become ready" name)
+    (qemu-manager-list-refresh))
+   (t
+    (let* ((conf (qemu-manager--read-conf name))
+           (port (string-to-number
+                  (or (qemu-manager--conf-get conf "VM_SSH_PORT") "0"))))
+      (if (zerop port)
+          (qemu-manager--clear-ready-state name)
+        (qemu-manager--probe-ssh-ready
+         port
+         (lambda (ready-p)
+           (cond
+            ((not (qemu-manager--running-p name))
+             (qemu-manager--clear-ready-state name)
+             (qemu-manager-list-refresh))
+            (ready-p
+             (puthash name 'ready qemu-manager--ready-state)
+             (message "qemu-manager: VM '%s' is ready for SSH" name)
+             (qemu-manager-list-refresh))
+            (t
+             (puthash name
+                      (run-with-timer qemu-manager-ready-interval nil
+                                      #'qemu-manager--ready-poll name deadline)
+                      qemu-manager--ready-timers))))))))))
+
+(defun qemu-manager--require-guest-ready (name)
+  "Guard for commands that talk to VM NAME's guest sshd.
+Errors if QEMU isn't running.  Warns with `y-or-n-p' if readiness
+tracking reports `booting' or `timeout', so an accidental
+connection attempt during boot is caught instead of silently
+hanging in TRAMP/rsync.  Proceeds silently when `ready' or when
+no readiness info is tracked (e.g. offline VMs, or VMs running
+from before this Emacs session)."
+  (unless (qemu-manager--running-p name)
+    (user-error "VM '%s' is not running" name))
+  (let ((state (gethash name qemu-manager--ready-state)))
+    (cond
+     ((eq state 'booting)
+      (unless (y-or-n-p
+               (format "VM '%s' is still booting -- proceed anyway? " name))
+        (user-error "Aborted")))
+     ((eq state 'timeout)
+      (unless (y-or-n-p
+               (format "VM '%s' never reported SSH ready -- proceed anyway? " name))
+        (user-error "Aborted"))))))
+
+(defun qemu-manager--viewer-attached-p (name)
+  "Return non-nil if a viewer process is currently running for VM NAME."
+  (let ((proc (gethash name qemu-manager--viewer-procs)))
+    (and proc (process-live-p proc))))
+
+(defun qemu-manager--register-viewer (name proc)
+  "Track PROC as the viewer for VM NAME; clear on exit and refresh list."
+  (when-let ((old (gethash name qemu-manager--viewer-procs)))
+    (when (process-live-p old)
+      (delete-process old)))
+  (puthash name proc qemu-manager--viewer-procs)
+  (let ((prev (process-sentinel proc)))
+    (set-process-sentinel
+     proc
+     (lambda (p event)
+       (when prev (funcall prev p event))
+       (unless (process-live-p p)
+         (when (eq (gethash name qemu-manager--viewer-procs) p)
+           (remhash name qemu-manager--viewer-procs))
+         (when (get-buffer "*qemu-manager*")
+           (qemu-manager-list-refresh))))))
+  (when (get-buffer "*qemu-manager*")
+    (qemu-manager-list-refresh)))
+
+(defun qemu-manager--start-ready-watch (name)
+  "Begin polling for SSH readiness of VM NAME."
+  (qemu-manager--clear-ready-state name)
+  (puthash name 'booting qemu-manager--ready-state)
+  (let ((deadline (+ (float-time) qemu-manager-ready-timeout)))
+    (puthash name
+             (run-with-timer qemu-manager-ready-interval nil
+                             #'qemu-manager--ready-poll name deadline)
+             qemu-manager--ready-timers)))
 
 ;; ── QEMU helpers ─────────────────────────────────────────────────────────────
 
@@ -484,6 +658,8 @@ Returns the process object."
                             (when (file-exists-p pidfile)
                               (delete-file pidfile))
                             (qemu-manager--stop-virtiofsd name)
+                            (qemu-manager--clear-ready-state name)
+                            (remhash name qemu-manager--viewer-procs)
                             (when (get-buffer "*qemu-manager*")
                               (qemu-manager-list-refresh))
                             (when (and on-exit
@@ -527,23 +703,35 @@ Returns the process object."
 ;; ── Commands ─────────────────────────────────────────────────────────────────
 
 ;;;###autoload
-(defun qemu-manager-start (name)
-  "Start VM NAME."
-  (interactive (list (completing-read "Start VM: " (qemu-manager--list-vms) nil t)))
+(defun qemu-manager-start (name &optional offline)
+  "Start VM NAME headless (no viewer window).
+The QEMU process runs in the background; connect later with
+`qemu-manager-vnc', `qemu-manager-spice', or via SSH.  Use
+`qemu-manager-run' to start and open a viewer in one step.
+With prefix argument OFFLINE, disable networking (`-nic none')."
+  (interactive (list (completing-read "Start VM (headless): " (qemu-manager--list-vms) nil t)
+                     current-prefix-arg))
   (when (qemu-manager--running-p name)
     (user-error "VM '%s' is already running" name))
+  (unless (y-or-n-p (format "Start VM '%s' headless%s? "
+                            name (if offline ", offline" "")))
+    (user-error "Aborted"))
   (let* ((conf (qemu-manager--read-conf name))
          (share-path (qemu-manager--conf-get conf "SHARE_PATH"))
-         (args (qemu-manager--qemu-base-args name conf)))
+         (args (qemu-manager--qemu-base-args name conf offline)))
     (when (and share-path (not (string-empty-p share-path)))
       (qemu-manager--start-virtiofsd name share-path))
     (qemu-manager--start-qemu name args)
+    (unless offline
+      (qemu-manager--start-ready-watch name))
     (qemu-manager--display-output
-     (format "Starting VM '%s'\n  Memory:  %s\n  CPUs:    %s\n  SSH:     localhost:%s\n  Display: %s\n%s"
+     (format "Starting VM '%s' (headless%s)\n  Memory:  %s\n  CPUs:    %s\n  SSH:     %s\n  Display: %s\n%s"
              name
+             (if offline ", offline" "")
              (or (qemu-manager--conf-get conf "VM_MEMORY") "?")
              (or (qemu-manager--conf-get conf "VM_CPUS") "?")
-             (or (qemu-manager--conf-get conf "VM_SSH_PORT") "?")
+             (if offline "disabled"
+               (format "localhost:%s" (or (qemu-manager--conf-get conf "VM_SSH_PORT") "?")))
              (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc")
              (if (and share-path (not (string-empty-p share-path)))
                  (format "  Share:   %s (tag %s)\n"
@@ -593,13 +781,15 @@ Force-kill after 10 ATTEMPTS."
     (run-with-timer 1 nil #'qemu-manager--wait-for-stop name pid (1+ attempts)))))
 
 ;;;###autoload
-(defun qemu-manager-run (name)
-  "Start VM NAME and open the display viewer."
-  (interactive (list (completing-read "Run VM: " (qemu-manager--list-vms) nil t)))
+(defun qemu-manager-run (name &optional offline)
+  "Start VM NAME and open the display viewer.
+With prefix argument OFFLINE, disable networking (`-nic none')."
+  (interactive (list (completing-read "Run VM: " (qemu-manager--list-vms) nil t)
+                     current-prefix-arg))
   (let* ((conf (qemu-manager--read-conf name))
          (display (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc")))
     (unless (qemu-manager--running-p name)
-      (qemu-manager-start name))
+      (qemu-manager-start name offline))
     (run-with-timer 1 nil
                     (lambda ()
                       (if (string= display "spice")
@@ -617,9 +807,11 @@ Force-kill after 10 ATTEMPTS."
   (let* ((conf (qemu-manager--read-conf name))
          (vnc-display (qemu-manager--conf-get conf "VM_VNC_DISPLAY"))
          (vnc-port (+ 5900 (string-to-number (or vnc-display "1")))))
-    (qemu-manager--run-process "qemu-manager-vnc" qemu-manager-vnc-viewer
-                      (append (list (format "localhost:%d" vnc-port))
-                              qemu-manager-vnc-viewer-args))))
+    (qemu-manager--register-viewer
+     name
+     (qemu-manager--run-process "qemu-manager-vnc" qemu-manager-vnc-viewer
+                                (append (list (format "localhost:%d" vnc-port))
+                                        qemu-manager-vnc-viewer-args)))))
 
 ;;;###autoload
 (defun qemu-manager-spice (name)
@@ -632,8 +824,10 @@ Force-kill after 10 ATTEMPTS."
   (let* ((conf (qemu-manager--read-conf name))
          (spice-port (or (qemu-manager--conf-get conf "VM_SPICE_PORT")
                          (number-to-string qemu-manager-default-spice-port))))
-    (qemu-manager--run-process "qemu-manager-spice" qemu-manager-spice-viewer
-                      (list "-h" "localhost" "-p" spice-port))))
+    (qemu-manager--register-viewer
+     name
+     (qemu-manager--run-process "qemu-manager-spice" qemu-manager-spice-viewer
+                                (list "-h" "localhost" "-p" spice-port)))))
 
 ;;;###autoload
 (defun qemu-manager-display (name)
@@ -688,8 +882,7 @@ share. TAG is the mount tag the guest will use with
   (interactive (list (completing-read "Keyboard setup for VM: "
                                       (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qemu-manager--running-p name)
-    (user-error "VM '%s' is not running" name))
+  (qemu-manager--require-guest-ready name)
   (let ((ssh-args (qemu-manager--ssh-args name))
         (remote-cmd (string-join
                      '("gsettings set org.gnome.desktop.input-sources sources \"[('xkb', 'gb')]\""
@@ -705,8 +898,7 @@ share. TAG is the mount tag the guest will use with
   (interactive (list (completing-read "Copy clipboard from VM: "
                                       (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qemu-manager--running-p name)
-    (user-error "VM '%s' is not running" name))
+  (qemu-manager--require-guest-ready name)
   (let* ((ssh-args (qemu-manager--ssh-args name))
          (remote-cmd (concat
                       "if command -v wl-paste >/dev/null 2>&1; then wl-paste;"
@@ -731,8 +923,7 @@ share. TAG is the mount tag the guest will use with
   (interactive (list (completing-read "Paste clipboard to VM: "
                                       (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qemu-manager--running-p name)
-    (user-error "VM '%s' is not running" name))
+  (qemu-manager--require-guest-ready name)
   (let* ((ssh-args (qemu-manager--ssh-args name))
          (content (with-temp-buffer
                     (call-process "wl-paste" nil t nil)
@@ -755,8 +946,7 @@ Runs in a terminal buffer since it may prompt for a password."
   (interactive (list (completing-read "Push SSH key to VM: "
                                       (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (unless (qemu-manager--running-p name)
-    (user-error "VM '%s' is not running" name))
+  (qemu-manager--require-guest-ready name)
   (let* ((conf (qemu-manager--read-conf name))
          (user (qemu-manager--conf-get conf "VM_USER"))
          (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
@@ -804,9 +994,8 @@ Runs in a terminal buffer since it may prompt for a password."
   (interactive (list (completing-read "Dired into VM: "
                                       (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                       nil t)))
-  (if (qemu-manager--running-p name)
-      (dired (qemu-manager--tramp-path name))
-    (user-error "VM '%s' is not running" name)))
+  (qemu-manager--require-guest-ready name)
+  (dired (qemu-manager--tramp-path name)))
 
 ;;;###autoload
 (defun qemu-manager-eshell (name &optional path)
@@ -822,37 +1011,36 @@ is preserved."
      (list name
            (when current-prefix-arg
              (read-string "Remote start path: " "/")))))
-  (if (qemu-manager--running-p name)
-      (let* ((default-directory (qemu-manager--tramp-path name path))
-             (buf-name (if path
-                           (format "*eshell: %s @ %s*" name path)
-                         (format "*eshell: %s*" name))))
-        (if (get-buffer buf-name)
-            (pop-to-buffer buf-name)
-          (with-current-buffer (eshell t)
-            (rename-buffer buf-name)
-            (pop-to-buffer (current-buffer)))))
-    (user-error "VM '%s' is not running" name)))
+  (qemu-manager--require-guest-ready name)
+  (let* ((default-directory (qemu-manager--tramp-path name path))
+         (buf-name (if path
+                       (format "*eshell: %s @ %s*" name path)
+                     (format "*eshell: %s*" name))))
+    (if (get-buffer buf-name)
+        (pop-to-buffer buf-name)
+      (with-current-buffer (eshell t)
+        (rename-buffer buf-name)
+        (pop-to-buffer (current-buffer))))))
 
 ;;;###autoload
-(defun qemu-manager-scp (name files remote-dir)
-  "Copy FILES to VM NAME at REMOTE-DIR via rsync over SSH.
+(defun qemu-manager-send (name paths remote-dir)
+  "Send PATHS (files or directories) to VM NAME at REMOTE-DIR via rsync.
 When called from a dired buffer, uses the marked files or the file at point.
-Otherwise, prompts for a file."
+Otherwise, prompts for a file or directory.  The output buffer is
+displayed while the transfer runs so progress is visible."
   (interactive
-   (let* ((vm (completing-read "SCP to VM: "
+   (let* ((vm (completing-read "Send to VM: "
                                (seq-filter #'qemu-manager--running-p (qemu-manager--list-vms))
                                nil t))
-          (files (if (derived-mode-p 'dired-mode)
+          (paths (if (derived-mode-p 'dired-mode)
                      (dired-get-marked-files nil nil nil nil t)
-                   (list (read-file-name "File to send: " nil nil t))))
+                   (list (read-file-name "File or directory to send: " nil nil t))))
           (conf (qemu-manager--read-conf vm))
           (user (qemu-manager--conf-get conf "VM_USER"))
           (remote-dir (read-string "Remote directory: "
                                    (format "/home/%s/" user))))
-     (list vm files remote-dir)))
-  (unless (qemu-manager--running-p name)
-    (user-error "VM '%s' is not running" name))
+     (list vm paths remote-dir)))
+  (qemu-manager--require-guest-ready name)
   (let* ((conf (qemu-manager--read-conf name))
          (user (qemu-manager--conf-get conf "VM_USER"))
          (port (qemu-manager--conf-get conf "VM_SSH_PORT"))
@@ -863,7 +1051,7 @@ Otherwise, prompts for a file."
                         (format "qemu-manager-%s" name)
                       (format "%s@localhost" user)))
          (dest (format "%s:%s" dest-host remote-dir))
-         (expanded (mapcar #'expand-file-name files))
+         (expanded (mapcar #'expand-file-name paths))
          (args (append (list "-avz" "--progress" "-e" ssh-cmd)
                        expanded (list dest)))
          (buf (get-buffer-create qemu-manager-output-buffer)))
@@ -872,12 +1060,12 @@ Otherwise, prompts for a file."
       (erase-buffer)
       (insert (format "$ rsync -avz --progress -e \"%s\" %s %s\n\n"
                       ssh-cmd
-                      (mapconcat (lambda (f) (file-name-nondirectory f)) files " ")
+                      (mapconcat (lambda (f) (file-name-nondirectory f)) paths " ")
                       dest))
       (setq buffer-read-only t))
-    (display-buffer buf '(display-buffer-at-bottom . ((window-height . 10))))
+    (display-buffer buf '(display-buffer-at-bottom . ((window-height . 12))))
     (make-process
-     :name "qemu-manager-scp"
+     :name "qemu-manager-send"
      :buffer buf
      :command (cons "rsync" args)
      :filter (lambda (proc str)
@@ -1102,10 +1290,10 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
 
 (defvar qemu-manager-list-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") #'qemu-manager-list-run)
-    (define-key map (kbd "r")   #'qemu-manager-list-run)
-    (define-key map (kbd "s")   #'qemu-manager-list-start)
-    (define-key map (kbd "x")   #'qemu-manager-list-stop)
+    (define-key map (kbd "RET") #'qemu-manager-menu)
+    (define-key map (kbd "j")   #'qemu-manager-list-run)
+    (define-key map (kbd "m")   #'qemu-manager-list-start)
+    (define-key map (kbd "k")   #'qemu-manager-list-stop)
     (define-key map (kbd "c")   #'qemu-manager-list-create)
     (define-key map (kbd "v")   #'qemu-manager-list-vnc)
     (define-key map (kbd "V")   #'qemu-manager-list-spice)
@@ -1113,11 +1301,11 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "e")   #'qemu-manager-list-eshell)
     (define-key map (kbd "i")   #'qemu-manager-list-info)
     (define-key map (kbd "D")   #'qemu-manager-list-display)
-    (define-key map (kbd "k")   #'qemu-manager-list-keyboard)
+    (define-key map (kbd "K")   #'qemu-manager-list-keyboard)
     (define-key map (kbd "w")   #'qemu-manager-list-clip-copy)
     (define-key map (kbd "y")   #'qemu-manager-list-clip-paste)
     (define-key map (kbd "I")   #'qemu-manager-list-clip-install)
-    (define-key map (kbd "S")   #'qemu-manager-list-scp)
+    (define-key map (kbd "S")   #'qemu-manager-list-send)
     (define-key map (kbd "P")   #'qemu-manager-list-ssh-copy-id)
     (define-key map (kbd "F")   #'qemu-manager-list-share-set)
     (define-key map (kbd "C")   #'qemu-manager-list-clone)
@@ -1137,7 +1325,8 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
   "Major mode for the qemu-manager VM list buffer."
   (setq tabulated-list-format
         [("Name"    20 t)
-         ("Status"   8 t)
+         ("Status"   9 t)
+         ("View"     9 t)
          ("Memory"   8 nil)
          ("CPUs"     5 nil)
          ("Disk"     8 nil)
@@ -1154,9 +1343,24 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
    (lambda (name)
      (let* ((conf    (qemu-manager--read-conf name))
             (running (qemu-manager--running-p name))
-            (status  (if running
-                         (propertize "running" 'face '(:foreground "green"))
-                       (propertize "stopped" 'face 'shadow)))
+            (ready   (and running (gethash name qemu-manager--ready-state)))
+            (status  (cond
+                      ((not running)
+                       (propertize "stopped" 'face 'shadow))
+                      ((eq ready 'ready)
+                       (propertize "ready"   'face '(:foreground "green" :weight bold)))
+                      ((eq ready 'booting)
+                       (propertize "booting" 'face '(:foreground "yellow")))
+                      ((eq ready 'timeout)
+                       (propertize "timeout" 'face '(:foreground "orange")))
+                      (t
+                       (propertize "running" 'face '(:foreground "green")))))
+            (view    (cond
+                      ((not running) "")
+                      ((qemu-manager--viewer-attached-p name)
+                       (propertize "viewer"   'face '(:foreground "cyan")))
+                      (t
+                       (propertize "headless" 'face 'shadow))))
             (disk    (qemu-manager--disk-size name))
             (memory  (or (qemu-manager--conf-get conf "VM_MEMORY") "?"))
             (cpus    (or (qemu-manager--conf-get conf "VM_CPUS") "?"))
@@ -1168,7 +1372,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
        (list name
              (vector
               (propertize name 'face 'bold)
-              status memory cpus disk ssh display port))))
+              status view memory cpus disk ssh display port))))
    (qemu-manager--list-vms)))
 
 (defun qemu-manager-list-refresh ()
@@ -1191,15 +1395,17 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
   (or (tabulated-list-get-id)
       (user-error "Move point to a VM row first (use n/p or arrow keys)")))
 
-(defun qemu-manager-list-run ()
-  "Run the VM at point (start + viewer)."
-  (interactive)
-  (qemu-manager-run (qemu-manager-list--current-name)))
+(defun qemu-manager-list-run (&optional offline)
+  "Run the VM at point (start + viewer).
+With prefix argument OFFLINE, disable networking."
+  (interactive "P")
+  (qemu-manager-run (qemu-manager-list--current-name) offline))
 
-(defun qemu-manager-list-start ()
-  "Start the VM at point."
-  (interactive)
-  (qemu-manager-start (qemu-manager-list--current-name)))
+(defun qemu-manager-list-start (&optional offline)
+  "Start the VM at point.
+With prefix argument OFFLINE, disable networking."
+  (interactive "P")
+  (qemu-manager-start (qemu-manager-list--current-name) offline))
 
 (defun qemu-manager-list-stop ()
   "Stop the VM at point, with confirmation."
@@ -1260,6 +1466,7 @@ With prefix arg, prompt for an absolute remote start path."
   "Install xclip on the VM at point via a terminal buffer."
   (interactive)
   (let ((name (qemu-manager-list--current-name)))
+    (qemu-manager--require-guest-ready name)
     (when (yes-or-no-p (format "Install xclip on '%s'? " name))
       (qemu-manager--clip-install name))))
 
@@ -1280,14 +1487,14 @@ With prefix arg, prompt for an absolute remote start path."
          (tag (if (string-empty-p path) "" (read-string "Mount tag: " current-tag))))
     (qemu-manager-share-set name path tag)))
 
-(defun qemu-manager-list-scp ()
-  "SCP files to the VM at point."
+(defun qemu-manager-list-send ()
+  "Send files or directories to the VM at point."
   (interactive)
   (let ((name (qemu-manager-list--current-name)))
-    (qemu-manager-scp name
+    (qemu-manager-send name
              (if (derived-mode-p 'dired-mode)
                  (dired-get-marked-files nil nil nil nil t)
-               (list (read-file-name "File to send: " nil nil t)))
+               (list (read-file-name "File or directory to send: " nil nil t)))
              (let* ((conf (qemu-manager--read-conf name))
                     (user (qemu-manager--conf-get conf "VM_USER")))
                (read-string "Remote directory: "
@@ -1352,9 +1559,9 @@ With prefix arg, prompt for an absolute remote start path."
   "QEMU-Manager - QEMU Virtual Machine Manager."
   [:if (lambda () (derived-mode-p 'qemu-manager-list-mode))
    ["Lifecycle"
-    ("s" "Start"              qemu-manager-list-start)
-    ("r" "Run (start+viewer)" qemu-manager-list-run)
-    ("x" "Stop"               qemu-manager-list-stop)
+    ("m" "Start (headless)"   qemu-manager-list-start)
+    ("j" "Run (start+viewer)" qemu-manager-list-run)
+    ("k" "Stop (kill)"        qemu-manager-list-stop)
     ("c" "Create new VM"      qemu-manager-list-create)
     ("C" "Clone"              qemu-manager-list-clone)]
    ["Connect"
@@ -1368,11 +1575,11 @@ With prefix arg, prompt for an absolute remote start path."
     ("R" "Restore snapshot"   qemu-manager-list-snapshot-restore)
     ("X" "Delete snapshot"    qemu-manager-list-snapshot-delete)]
    ["Tools"
-    ("S" "Send files (rsync)" qemu-manager-list-scp)
+    ("S" "Send files/dirs (rsync)" qemu-manager-list-send)
     ("P" "Push SSH key"       qemu-manager-list-ssh-copy-id)
     ("F" "Shared folder"      qemu-manager-list-share-set)
     ("D" "Toggle display"     qemu-manager-list-display)
-    ("k" "Keyboard setup"     qemu-manager-list-keyboard)
+    ("K" "Keyboard setup"     qemu-manager-list-keyboard)
     ("w" "Clipboard copy"     qemu-manager-list-clip-copy)
     ("y" "Clipboard paste"    qemu-manager-list-clip-paste)
     ("I" "Install xclip"      qemu-manager-list-clip-install)
@@ -1380,9 +1587,9 @@ With prefix arg, prompt for an absolute remote start path."
   [:if-not (lambda () (derived-mode-p 'qemu-manager-list-mode))
    :description "QEMU-Manager"
    ("l" "Open VM list"       qemu-manager-list)
-   ("s" "Start VM"           qemu-manager-start)
-   ("x" "Stop VM"            qemu-manager-stop)
-   ("r" "Run VM"             qemu-manager-run)
+   ("m" "Start VM (headless)" qemu-manager-start)
+   ("k" "Stop VM"             qemu-manager-stop)
+   ("j" "Run VM (start+viewer)" qemu-manager-run)
    ("c" "Create new VM"      qemu-manager-create)
    ("i" "VM info"            qemu-manager-info)])
 

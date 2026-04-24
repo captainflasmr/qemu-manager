@@ -1,29 +1,56 @@
-#+title: Changelog
+#+title: Change log of qemu-manager
 #+author: James Dyer
+#+email: captainflasmr@gmail.com
+#+language: en
+#+options: ':t toc:nil author:nil email:nil num:nil title:nil
+#+todo: TODO DOING | DONE
+#+startup: showall
 
-* 1.1.0 — <2026-04-13>
+This document contains the release notes for each tagged commit on the
+project's main git repository: [[https://github.com/captainflasmr/qemu-manager]].
 
-** Added
+* Versions
+
+** Unreleased
+
+*** Added
+
+- ~qemu-manager-start~ and ~qemu-manager-run~ now accept a prefix argument to launch the VM with networking disabled (~-nic none~); in the list buffer use ~C-u m~ or ~C-u j~
+
+*** Changed
+
+- List-buffer and transient bindings aligned with Emacs conventions: ~j~ runs, ~m~ starts, ~k~ stops. Keyboard setup moves from ~k~ to ~K~. Old bindings (~r~, ~s~, ~x~) are removed.
+- ~RET~ in the list buffer now opens the transient menu (previously ran the VM at point), reducing the chance of accidental startups
+- ~qemu-manager-start~ now asks for ~y-or-n-p~ confirmation before launching, protecting both ~m~ and ~j~ (which calls start internally)
+- ~*qemu-manager output*~ buffer is no longer popped up on each action; it is still populated in the background and can be viewed with ~M-x switch-to-buffer~ when needed
+- Guest SSH readiness tracking: after a networked headless start, qemu-manager polls the forwarded SSH port until the guest sshd returns a banner. The list buffer's Status column shows ~booting~ → ~ready~ (or ~timeout~), and a ~message~ fires on ready. Tunable via ~qemu-manager-ready-timeout~ and ~qemu-manager-ready-interval~.
+- New *View* column in the list buffer reports whether a VNC/SPICE viewer is currently attached (~viewer~) or the VM is running without one (~headless~). Updates automatically as viewers are opened and closed.
+- Renamed ~qemu-manager-scp~ / ~qemu-manager-list-scp~ to ~qemu-manager-send~ / ~qemu-manager-list-send~ (the transport is rsync, not scp, and the command accepts directories as well as files). The ~S~ binding is unchanged. The ~*qemu-manager output*~ buffer now pops up at the bottom during a send so transfer progress is visible.
+- Commands that talk to the guest's sshd (~qemu-manager-send~, ~qemu-manager-dired~, ~qemu-manager-eshell~, ~qemu-manager-ssh-copy-id~, ~qemu-manager-keyboard~, ~qemu-manager-clip-copy~ / ~clip-paste~ / ~list-clip-install~) now route through a shared guard that warns ~y-or-n-p~ if readiness tracking reports ~booting~ or ~timeout~ -- catches the common case of trying to connect before the guest sshd is up. No prompt is shown once the VM is ~ready~ or when no readiness info is tracked.
+
+** v1.1.0 <2026-04-13>
+
+*** Added
 
 - Virtiofs shared folders: set ~SHARE_PATH~ / ~SHARE_TAG~ on a VM (via ~qemu-manager-share-set~ or ~F~ in the list buffer) and ~qemu-manager-start~ launches ~virtiofsd~ alongside QEMU on a per-VM Unix socket, wires up ~memory-backend-memfd~ + ~vhost-user-fs-pci~ args, and tears the daemon down when the VM exits
 - ~qemu-manager-virtiofsd-binary~ and ~qemu-manager-virtiofsd-args~ customizations
 - ~qemu-manager-share-set~ interactive command and ~qemu-manager-list-share-set~ (~F~) list-buffer wrapper; share entry added to the Tools group in the transient menu
 - ~qemu-manager-info~ now reports the configured share path and mount tag
 
-** Fixed
+*** Fixed
 
 - ~qemu-manager-eshell~ no longer errors with "Defining as dynamic an already lexical var: eshell-buffer-name" on recent Emacs; the eshell buffer is now created via ~(eshell t)~ and renamed after the fact
 - ~qemu-manager-snapshot-list~ and ~qemu-manager--snapshot-tags~ pass ~-U~ to ~qemu-img snapshot -l~ so listing snapshots works while the VM is running and holds the qcow2 write lock
 
-** Changed
+*** Changed
 
 - ~qemu-manager-menu~ transient now displays all four groups (Lifecycle, Connect, Snapshots, Tools) in a single row
 
-* 1.0.0 — <2026-04-05>
+** v1.0.0 <2026-04-05>
 
 Pure Elisp rewrite -- removed dependency on the =qemu-manager= bash script.
 
-** Changed
+*** Changed
 
 - ~qemu-manager.el~ now calls QEMU tools (~qemu-system-x86_64~, ~qemu-img~), SSH utilities, and display viewers directly -- the external ~qemu-manager~ shell script is no longer required
 - ~qemu-manager-start~ builds QEMU command-line arguments in Elisp and launches via ~make-process~ with PID file management and automatic cleanup on exit
@@ -39,7 +66,7 @@ Pure Elisp rewrite -- removed dependency on the =qemu-manager= bash script.
 - ~qemu-manager-ssh-copy-id~ runs ~ssh-copy-id~ directly in a term buffer; a sentinel handles permission fixing and SSH config entry creation
 - Clip install runs ~ssh -t~ directly in a term buffer with package manager detection
 
-** Added
+*** Added
 
 - ~qemu-manager-qemu-binary~ customization (path to ~qemu-system-x86_64~)
 - ~qemu-manager-vnc-viewer~ / ~qemu-manager-vnc-viewer-args~ / ~qemu-manager-spice-viewer~ customizations for viewer programs
@@ -50,34 +77,34 @@ Pure Elisp rewrite -- removed dependency on the =qemu-manager= bash script.
 - Config writing (~qemu-manager--write-conf~, ~qemu-manager--update-conf-value~) for creating and modifying ~vm.conf~ from Elisp
 - QEMU process launcher (~qemu-manager--start-qemu~) with PID file lifecycle, sentinel cleanup, and automatic list refresh on VM exit
 
-** Removed
+*** Removed
 
 - ~qemu-manager-executable~ customization variable
 - ~qemu-manager--run-command~ function (replaced by ~qemu-manager--run-process~ which takes a program + args directly)
 - Dependency on the external ~qemu-manager~ shell script
 
-* 0.5.0 — <2026-04-05>
+** v0.5.0 <2026-04-05>
 
 Transient menu for discoverable command access.
 
-** Added
+*** Added
 
 - ~qemu-manager-menu~ transient prefix command with 2×2 grouped layout: Lifecycle, Connect, Snapshots, Tools
 - ~?~ keybinding in list buffer to invoke the transient menu
 - Context-aware menu: shows list-buffer commands when in ~*qemu-manager*~, standalone commands elsewhere
 - ~transient~ added to ~Package-Requires~
 
-** Changed
+*** Changed
 
 - ~n~ / ~p~ now navigate the list (next/previous line)
 - Snapshot create moved from ~n~ to ~+~
 - Removed minibuffer keybinding hint on ~qemu-manager-list~ startup (replaced by transient menu)
 
-* 0.4.0 — <2026-04-04>
+** v0.4.0 <2026-04-04>
 
 Snapshots and VM cloning.
 
-** Added
+*** Added
 
 - ~qemu-manager snapshot <name> create|list|restore|delete [tag]~ for managing qcow2 internal snapshots on stopped VMs
 - ~qemu-manager clone <source> <new-name> [--linked]~ to clone a VM
@@ -89,11 +116,11 @@ Snapshots and VM cloning.
 - Emacs: ~n~ (snapshot create), ~N~ (snapshot list), ~R~ (snapshot restore), ~X~ (snapshot delete), ~C~ (clone) keybindings in list buffer
 - Emacs: ~qemu-manager--snapshot-tags~ helper parses ~qemu-img snapshot -l~ output for completing-read on restore and delete
 
-* 0.3.0 — <2026-04-03>
+** v0.3.0 <2026-04-03>
 
 Clipboard sharing over SSH, display switching, and SwayWM integration notes.
 
-** Added
+*** Added
 
 - ~qemu-manager clip <name> copy|paste~ for clipboard sharing over SSH between host and VM
   - Auto-detects guest clipboard tool: ~wl-paste~/~wl-copy~ (Wayland), ~xclip~ (X11), ~xsel~
@@ -106,11 +133,11 @@ Clipboard sharing over SSH, display switching, and SwayWM integration notes.
 - Emacs: ~w~ (clip copy), ~y~ (clip paste), ~I~ (clip install), ~D~ (toggle display) keybindings in list buffer
 - Documented SwayWM ~shortcuts_inhibitor~ workaround for SPICE keyboard grab
 
-* 0.2.0 — <2026-04-03>
+** v0.2.0 <2026-04-03>
 
 SPICE display support, keyboard setup command, and Emacs UI updates.
 
-** Added
+*** Added
 
 - SPICE display backend as an alternative to VNC (~--display spice~ on ~qemu-manager create~)
   - Uses QXL graphics with ~spice-vdagent~ for clipboard sharing and dynamic resolution
@@ -122,22 +149,22 @@ SPICE display support, keyboard setup command, and Emacs UI updates.
 - Emacs: ~qemu-manager-keyboard~ command and ~k~ keybinding in list buffer
 - ~VM_DISPLAY~ and ~VM_SPICE_PORT~ fields in ~vm.conf~
 
-** Changed
+*** Changed
 
 - Emacs: list buffer columns updated from "VNC" to "Display" and "Port"
 - ~qemu-manager list~ and ~qemu-manager info~ now show display type and corresponding port
 - Bumped ~qemu-manager.el~ version to 0.2.0
 
-** Backward Compatibility
+*** Backward Compatibility
 
 - Existing VMs without ~VM_DISPLAY~ in their config default to ~vnc~
 - No changes required to existing VM configurations
 
-* 0.1.0 — <2026-04-01>
+** v0.1.0 <2026-04-01>
 
 Initial release.
 
-** Added
+*** Added
 
 - ~qemu-manager~ shell script: Docker-inspired CLI for managing QEMU VMs
   - create, install, start, run, stop, ssh, scp, vnc, list, info, rename, rm

@@ -1,6 +1,12 @@
-#+title: qemu-manager.el --- QEMU VM manager for Emacs
+#+title: qemu-manager
 #+author: James Dyer
-#+version: 1.1.0
+#+email: captainflasmr@gmail.com
+#+language: en
+#+options: ':t toc:nil author:nil email:nil num:nil title:nil
+#+todo: TODO DOING | DONE
+#+startup: showall
+
+* Summary
 
 *qemu-manager.el* manages QEMU virtual machines directly from Emacs. It calls ~qemu-system-x86_64~, ~qemu-img~, ~vncviewer~, ~spicy~, ~ssh~, and ~rsync~ directly -- no external wrapper script required.
 
@@ -69,9 +75,10 @@ Run ~M-x qemu-manager-list~ to open the VM manager buffer, then press ~?~ to ope
 
 | Key         | Action                                      |
 |-------------+---------------------------------------------|
-| ~RET~ / ~r~ | Run (start VM + open viewer)                |
-| ~s~         | Start VM                                    |
-| ~x~         | Stop VM (with confirmation)                 |
+| ~RET~ / ~?~ | Open transient menu                         |
+| ~j~         | Run (start VM + open viewer, confirms)      |
+| ~m~         | Start VM headless -- no viewer (confirms)   |
+| ~k~         | Stop VM (with confirmation)                 |
 | ~c~         | Create new VM (prompts for ISO, name, etc.) |
 | ~C~         | Clone VM (full or linked/COW)               |
 | ~n~ / ~p~   | Next / previous line                        |
@@ -82,19 +89,25 @@ Run ~M-x qemu-manager-list~ to open the VM manager buffer, then press ~?~ to ope
 | ~v~         | Open VNC viewer                             |
 | ~V~         | Open SPICE viewer                           |
 | ~D~         | Toggle display type (vnc/spice)             |
-| ~k~         | Setup keyboard remaps + sticky keys         |
+| ~K~         | Setup keyboard remaps + sticky keys         |
 | ~w~         | Copy VM clipboard → host (kill/copy)        |
 | ~y~         | Paste host clipboard → VM (yank)            |
 | ~I~         | Install clipboard tools on VM               |
 | ~d~         | Open dired on VM via TRAMP                  |
 | ~e~         | Open eshell on VM via TRAMP                 |
-| ~S~         | SCP marked files to VM                      |
+| ~S~         | Send files/dirs to VM (rsync)               |
 | ~P~         | Push SSH key for passwordless access        |
 | ~F~         | Configure virtiofs shared folder            |
 | ~i~         | Show VM info                                |
 | ~g~         | Refresh VM list                             |
 | ~q~         | Quit window                                 |
-| ~?~         | Open transient menu                         |
+~m~ starts the VM *headless* -- QEMU runs in the background with no viewer window attached. Connect later with ~v~ (VNC) or ~V~ (SPICE), or SSH in via ~d~ / ~e~. Use ~j~ instead if you want to start and open a viewer in one step.
+
+After a headless start the list buffer's Status column tracks boot progress: ~booting~ (yellow) while qemu-manager polls the forwarded SSH port, ~ready~ (bold green) once the guest's sshd returns a banner, or ~timeout~ (orange) if no banner appears within ~qemu-manager-ready-timeout~ seconds (default 180). The Status updates automatically; a ~message~ also fires when the VM becomes ready so you know it's safe to SSH or rsync.
+
+Alongside Status, a *View* column indicates whether a viewer is currently attached: ~headless~ (no viewer process), ~viewer~ (VNC/SPICE viewer is running). The column flips to ~viewer~ as soon as you attach one with ~v~ / ~V~ (or start via ~j~), and back to ~headless~ automatically when you close the viewer window.
+
+Prefix ~m~ or ~j~ with ~C-u~ to start the VM with networking disabled (~-nic none~).
 
 ** Snapshots
 
