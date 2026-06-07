@@ -1609,42 +1609,47 @@ With prefix arg, prompt for an absolute remote start path."
     ("m" "Start (headless)"   qemu-manager-list-start)
     ("j" "Run (start+viewer)" qemu-manager-list-run)
     ("k" "Stop (kill)"        qemu-manager-list-stop)
-    ("x" "Stop (kill)"        qemu-manager-list-stop)
+    ("x" "Stop (kill)"        qemu-manager-list-stop)]
+   ["Manage"
     ("c" "Create new VM"      qemu-manager-list-create)
     ("C" "Clone"              qemu-manager-list-clone)
-    ("DEL" "Delete VM"        qemu-manager-list-delete)]
+    ("DEL" "Delete VM"        qemu-manager-list-delete)
+    ("i" "VM info"            qemu-manager-list-info)]
    ["Connect"
     ("v" "VNC viewer"         qemu-manager-list-vnc)
     ("V" "SPICE viewer"       qemu-manager-list-spice)
     ("d" "Dired (TRAMP)"      qemu-manager-list-dired)
     ("b" "Dired base dir"     qemu-manager-dired-base)
-    ("e" "Eshell (TRAMP)"     qemu-manager-list-eshell)]
+    ("e" "Eshell (TRAMP)"     qemu-manager-list-eshell)]]
+  [:if (lambda () (derived-mode-p 'qemu-manager-list-mode))
    ["Snapshots"
     ("+" "Create snapshot"    qemu-manager-list-snapshot-create)
     ("N" "List snapshots"     qemu-manager-list-snapshot-list)
     ("R" "Restore snapshot"   qemu-manager-list-snapshot-restore)
     ("X" "Delete snapshot"    qemu-manager-list-snapshot-delete)]
-   ["Tools"
+   ["Transfer"
     ("S" "Send files/dirs (rsync)" qemu-manager-list-send)
     ("P" "Push SSH key"       qemu-manager-list-ssh-copy-id)
-    ("F" "Shared folder"      qemu-manager-list-share-set)
-    ("D" "Set display type"   qemu-manager-list-display)
-    ("K" "Keyboard setup"     qemu-manager-list-keyboard)
     ("w" "Clipboard copy"     qemu-manager-list-clip-copy)
     ("y" "Clipboard paste"    qemu-manager-list-clip-paste)
-    ("I" "Install xclip"      qemu-manager-list-clip-install)
-    ("i" "VM info"            qemu-manager-list-info)]]
+    ("I" "Install xclip"      qemu-manager-list-clip-install)]
+   ["Config"
+    ("D" "Set display type"   qemu-manager-list-display)
+    ("F" "Shared folder"      qemu-manager-list-share-set)
+    ("K" "Keyboard setup"     qemu-manager-list-keyboard)]]
   [:if-not (lambda () (derived-mode-p 'qemu-manager-list-mode))
-   :description "QEMU-Manager"
-   ("l" "Open VM list"       qemu-manager-list)
-   ("b" "Dired base dir"     qemu-manager-dired-base)
-   ("m" "Start VM (headless)" qemu-manager-start)
-   ("k" "Stop VM"             qemu-manager-stop)
-   ("x" "Stop VM"             qemu-manager-stop)
-   ("j" "Run VM (start+viewer)" qemu-manager-run)
-   ("c" "Create new VM"      qemu-manager-create)
-   ("D" "Delete VM"          qemu-manager-delete)
-   ("i" "VM info"            qemu-manager-info)])
+   ["Lifecycle"
+    ("m" "Start VM (headless)" qemu-manager-start)
+    ("j" "Run VM (start+viewer)" qemu-manager-run)
+    ("k" "Stop VM"             qemu-manager-stop)
+    ("x" "Stop VM"             qemu-manager-stop)]
+   ["Manage"
+    ("c" "Create new VM"      qemu-manager-create)
+    ("D" "Delete VM"          qemu-manager-delete)
+    ("i" "VM info"            qemu-manager-info)]
+   ["Navigate"
+    ("l" "Open VM list"       qemu-manager-list)
+    ("b" "Dired base dir"     qemu-manager-dired-base)]])
 
 (provide 'qemu-manager)
 
