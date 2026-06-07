@@ -11,13 +11,17 @@ project's main git repository: [[https://github.com/captainflasmr/qemu-manager]]
 
 * Versions
 
-** Unreleased
+** v1.2.0 <2026-06-07>
 
 *** Added
 
+- ~qemu-manager-delete~ / ~qemu-manager-list-delete~ (~DEL~ in the list buffer): permanently delete a VM, removing its whole directory after a ~yes-or-no-p~ confirmation that shows the path. Refuses to delete a running VM
+- ~qemu-manager-dired-base~ (~b~ in the list buffer): quickly open Dired on the base VM directory ~qemu-manager-base-dir~
 - ~qemu-manager-start~ and ~qemu-manager-run~ now accept a prefix argument to launch the VM with networking disabled (~-nic none~); in the list buffer use ~C-u m~ or ~C-u j~
 
 *** Changed
+
+- ~qemu-manager-display~ (~D~) is now an explicit chooser instead of a blind toggle: it prompts for the display type with ~completing-read~, shows the current value as the default, and no-ops if you pick the value already set. Menu label renamed from "Toggle display" to "Set display type"
 
 - List-buffer and transient bindings aligned with Emacs conventions: ~j~ runs, ~m~ starts, ~k~ stops. Keyboard setup moves from ~k~ to ~K~. Old bindings (~r~, ~s~, ~x~) are removed.
 - ~RET~ in the list buffer now opens the transient menu (previously ran the VM at point), reducing the chance of accidental startups

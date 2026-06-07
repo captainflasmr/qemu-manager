@@ -2,7 +2,7 @@
 ;;
 ;; Copyright (C) 2026 James Dyer
 ;; Author: James Dyer <captainflasmr@gmail.com>
-;; Version: 1.1.0
+;; Version: 1.2.0
 ;; Package-Requires: ((emacs "28.1") (transient "0.4.0"))
 ;; Keywords: tools, convenience
 ;; URL: https://github.com/captainflasmr/qemu-manager
@@ -830,17 +830,33 @@ With prefix argument OFFLINE, disable networking (`-nic none')."
                                 (list "-h" "localhost" "-p" spice-port)))))
 
 ;;;###autoload
-(defun qemu-manager-display (name)
-  "Toggle display type between vnc and spice for VM NAME."
-  (interactive (list (completing-read "Toggle display for VM: " (qemu-manager--list-vms) nil t)))
+(defun qemu-manager-display (name &optional new)
+  "Set the display type for VM NAME to NEW (\"vnc\" or \"spice\").
+When called interactively, prompt for the display type, showing the
+current value as the default.  The VM must be stopped."
+  (interactive
+   (let* ((name (completing-read "Set display for VM: " (qemu-manager--list-vms) nil t))
+          (current (or (qemu-manager--conf-get (qemu-manager--read-conf name) "VM_DISPLAY")
+                       "vnc"))
+          (new (completing-read
+                (format "Display type for '%s' (current: %s): " name current)
+                '("vnc" "spice") nil t nil nil current)))
+     (list name new)))
   (when (qemu-manager--running-p name)
     (user-error "VM '%s' is running -- stop it first to switch display" name))
   (let* ((conf (qemu-manager--read-conf name))
          (current (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc"))
-         (new (if (string= current "vnc") "spice" "vnc")))
-    (qemu-manager--update-conf-value name "VM_DISPLAY" new)
-    (message "Switched '%s' to %s (takes effect on next start)" name new)
-    (qemu-manager-list-refresh)))
+         (new (or new
+                  (completing-read
+                   (format "Display type for '%s' (current: %s): " name current)
+                   '("vnc" "spice") nil t nil nil current))))
+    (unless (member new '("vnc" "spice"))
+      (user-error "Display type must be \"vnc\" or \"spice\", got %S" new))
+    (if (string= new current)
+        (message "'%s' display already set to %s" name current)
+      (qemu-manager--update-conf-value name "VM_DISPLAY" new)
+      (message "Set '%s' display to %s (takes effect on next start)" name new)
+      (qemu-manager-list-refresh))))
 
 ;;;###autoload
 (defun qemu-manager-share-set (name path tag)
@@ -996,6 +1012,15 @@ Runs in a terminal buffer since it may prompt for a password."
                                       nil t)))
   (qemu-manager--require-guest-ready name)
   (dired (qemu-manager--tramp-path name)))
+
+;;;###autoload
+(defun qemu-manager-dired-base ()
+  "Open Dired on the base VM directory `qemu-manager-base-dir'."
+  (interactive)
+  (let ((dir (file-name-as-directory (expand-file-name qemu-manager-base-dir))))
+    (unless (file-directory-p dir)
+      (user-error "Base VM directory '%s' does not exist" dir))
+    (dired dir)))
 
 ;;;###autoload
 (defun qemu-manager-eshell (name &optional path)
@@ -1174,6 +1199,20 @@ With prefix argument or LINKED non-nil, create a linked (COW) clone."
          (qemu-manager-list-refresh))))))
 
 ;;;###autoload
+(defun qemu-manager-delete (name)
+  "Delete VM NAME completely, removing its directory after confirmation."
+  (interactive (list (completing-read "Delete VM: " (qemu-manager--list-vms) nil t)))
+  (when (qemu-manager--running-p name)
+    (user-error "VM '%s' is running -- stop it first" name))
+  (let ((dir (qemu-manager--vm-dir name)))
+    (unless (file-directory-p dir)
+      (user-error "VM '%s' does not exist" name))
+    (when (yes-or-no-p (format "Permanently delete VM '%s' and its directory %s? " name dir))
+      (delete-directory dir t)
+      (qemu-manager--display-output (format "Deleted VM '%s' (%s).\n" name dir))
+      (qemu-manager-list-refresh))))
+
+;;;###autoload
 (defun qemu-manager-info (name)
   "Show info for VM NAME."
   (interactive (list (completing-read "VM info: " (qemu-manager--list-vms) nil t)))
@@ -1299,6 +1338,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "v")   #'qemu-manager-list-vnc)
     (define-key map (kbd "V")   #'qemu-manager-list-spice)
     (define-key map (kbd "d")   #'qemu-manager-list-dired)
+    (define-key map (kbd "b")   #'qemu-manager-dired-base)
     (define-key map (kbd "e")   #'qemu-manager-list-eshell)
     (define-key map (kbd "i")   #'qemu-manager-list-info)
     (define-key map (kbd "D")   #'qemu-manager-list-display)
@@ -1310,6 +1350,7 @@ via `read-file-name'.  DISK, MEMORY, and CPUS are prompted with defaults."
     (define-key map (kbd "P")   #'qemu-manager-list-ssh-copy-id)
     (define-key map (kbd "F")   #'qemu-manager-list-share-set)
     (define-key map (kbd "C")   #'qemu-manager-list-clone)
+    (define-key map (kbd "DEL") #'qemu-manager-list-delete)
     (define-key map (kbd "n")   #'next-line)
     (define-key map (kbd "p")   #'previous-line)
     (define-key map (kbd "+")   #'qemu-manager-list-snapshot-create)
@@ -1444,7 +1485,7 @@ With prefix arg, prompt for an absolute remote start path."
   (qemu-manager-info (qemu-manager-list--current-name)))
 
 (defun qemu-manager-list-display ()
-  "Toggle display type (vnc/spice) for VM at point."
+  "Set the display type (vnc/spice) for VM at point."
   (interactive)
   (qemu-manager-display (qemu-manager-list--current-name)))
 
@@ -1509,6 +1550,11 @@ With prefix arg, prompt for an absolute remote start path."
                (read-string (format "Clone '%s' as: " name))
                (yes-or-no-p "Create linked (COW) clone? "))))
 
+(defun qemu-manager-list-delete ()
+  "Delete the VM at point."
+  (interactive)
+  (qemu-manager-delete (qemu-manager-list--current-name)))
+
 (defun qemu-manager-list-snapshot-create ()
   "Create a snapshot for the VM at point."
   (interactive)
@@ -1565,11 +1611,13 @@ With prefix arg, prompt for an absolute remote start path."
     ("k" "Stop (kill)"        qemu-manager-list-stop)
     ("x" "Stop (kill)"        qemu-manager-list-stop)
     ("c" "Create new VM"      qemu-manager-list-create)
-    ("C" "Clone"              qemu-manager-list-clone)]
+    ("C" "Clone"              qemu-manager-list-clone)
+    ("DEL" "Delete VM"        qemu-manager-list-delete)]
    ["Connect"
     ("v" "VNC viewer"         qemu-manager-list-vnc)
     ("V" "SPICE viewer"       qemu-manager-list-spice)
     ("d" "Dired (TRAMP)"      qemu-manager-list-dired)
+    ("b" "Dired base dir"     qemu-manager-dired-base)
     ("e" "Eshell (TRAMP)"     qemu-manager-list-eshell)]
    ["Snapshots"
     ("+" "Create snapshot"    qemu-manager-list-snapshot-create)
@@ -1580,7 +1628,7 @@ With prefix arg, prompt for an absolute remote start path."
     ("S" "Send files/dirs (rsync)" qemu-manager-list-send)
     ("P" "Push SSH key"       qemu-manager-list-ssh-copy-id)
     ("F" "Shared folder"      qemu-manager-list-share-set)
-    ("D" "Toggle display"     qemu-manager-list-display)
+    ("D" "Set display type"   qemu-manager-list-display)
     ("K" "Keyboard setup"     qemu-manager-list-keyboard)
     ("w" "Clipboard copy"     qemu-manager-list-clip-copy)
     ("y" "Clipboard paste"    qemu-manager-list-clip-paste)
@@ -1589,11 +1637,13 @@ With prefix arg, prompt for an absolute remote start path."
   [:if-not (lambda () (derived-mode-p 'qemu-manager-list-mode))
    :description "QEMU-Manager"
    ("l" "Open VM list"       qemu-manager-list)
+   ("b" "Dired base dir"     qemu-manager-dired-base)
    ("m" "Start VM (headless)" qemu-manager-start)
    ("k" "Stop VM"             qemu-manager-stop)
    ("x" "Stop VM"             qemu-manager-stop)
    ("j" "Run VM (start+viewer)" qemu-manager-run)
    ("c" "Create new VM"      qemu-manager-create)
+   ("D" "Delete VM"          qemu-manager-delete)
    ("i" "VM info"            qemu-manager-info)])
 
 (provide 'qemu-manager)
