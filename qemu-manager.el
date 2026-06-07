@@ -703,18 +703,21 @@ Returns the process object."
 ;; ── Commands ─────────────────────────────────────────────────────────────────
 
 ;;;###autoload
-(defun qemu-manager-start (name &optional offline)
+(defun qemu-manager-start (name &optional offline no-confirm)
   "Start VM NAME headless (no viewer window).
 The QEMU process runs in the background; connect later with
 `qemu-manager-vnc', `qemu-manager-spice', or via SSH.  Use
 `qemu-manager-run' to start and open a viewer in one step.
-With prefix argument OFFLINE, disable networking (`-nic none')."
+With prefix argument OFFLINE, disable networking (`-nic none').
+When NO-CONFIRM is non-nil, skip the start confirmation prompt
+\(used by `qemu-manager-run', which prompts for itself)."
   (interactive (list (completing-read "Start VM (headless): " (qemu-manager--list-vms) nil t)
                      current-prefix-arg))
   (when (qemu-manager--running-p name)
     (user-error "VM '%s' is already running" name))
-  (unless (y-or-n-p (format "Start VM '%s' headless%s? "
-                            name (if offline ", offline" "")))
+  (unless (or no-confirm
+              (y-or-n-p (format "Start VM '%s' headless%s? "
+                                name (if offline ", offline" ""))))
     (user-error "Aborted"))
   (let* ((conf (qemu-manager--read-conf name))
          (share-path (qemu-manager--conf-get conf "SHARE_PATH"))
@@ -789,7 +792,10 @@ With prefix argument OFFLINE, disable networking (`-nic none')."
   (let* ((conf (qemu-manager--read-conf name))
          (display (or (qemu-manager--conf-get conf "VM_DISPLAY") "vnc")))
     (unless (qemu-manager--running-p name)
-      (qemu-manager-start name offline))
+      (unless (y-or-n-p (format "Run VM '%s' (start + %s viewer)%s? "
+                                name display (if offline ", offline" "")))
+        (user-error "Aborted"))
+      (qemu-manager-start name offline t))
     (run-with-timer 1 nil
                     (lambda ()
                       (if (string= display "spice")

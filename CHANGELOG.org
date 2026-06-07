@@ -13,8 +13,13 @@ project's main git repository: [[https://github.com/captainflasmr/qemu-manager]]
 
 ** v1.2.0 <2026-06-07>
 
+*** Fixed
+
+- ~qemu-manager-run~ (~j~) now shows an accurate "Run VM (start + vnc/spice viewer)" confirmation instead of the misleading "Start headless" prompt inherited from ~qemu-manager-start~
+
 *** Added
 
+- ~qemu-manager-vm~: a standalone Bash launcher that starts VMs entirely outside Emacs, so they survive Emacs (and the login session) exiting -- run it from a login shell, or wrap Emacs in it. It reads the same ~vm.conf~ files and writes the same pidfiles, so VMs it starts are fully decoupled from Emacs's lifecycle yet still appear in (and can be stopped/connected to from) ~qemu-manager-list~. Subcommands: ~start <name> [--offline]~, ~run~ (start + viewer), ~view~, ~stop~, ~status~, ~list~, ~print~. It runs each VM as a transient systemd *user service* (which requires user lingering: ~loginctl enable-linger <user>~) with a ~setsid~ fallback on non-systemd systems. (VMs started from *within* Emacs remain children of Emacs and stop when it exits, as before.)
 - ~qemu-manager-delete~ / ~qemu-manager-list-delete~ (~DEL~ in the list buffer): permanently delete a VM, removing its whole directory after a ~yes-or-no-p~ confirmation that shows the path. Refuses to delete a running VM
 - ~qemu-manager-dired-base~ (~b~ in the list buffer): quickly open Dired on the base VM directory ~qemu-manager-base-dir~
 - ~qemu-manager-start~ and ~qemu-manager-run~ now accept a prefix argument to launch the VM with networking disabled (~-nic none~); in the list buffer use ~C-u m~ or ~C-u j~
